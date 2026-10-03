@@ -40,7 +40,7 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-.wrap { max-width: 920px; margin: 0 auto; padding: 0 16px; }
+.wrap { max-width: 1240px; margin: 0 auto; padding: 0 16px; }
 
 /* Header */
 .hero {
@@ -167,3 +167,28 @@ td.gd-neg { color: var(--loss); }
   .side { gap: 6px; font-size: 14px; }
   .score { min-width: 54px; font-size: 15px; }
 }
+
+/* Opponent-per-pot columns */
+.standings th.pot-head { color: var(--text); border-bottom: 0; padding-bottom: 2px; }
+.standings .ha-row th { padding-top: 2px; font-size: 11px; }
+.standings .pot-start { border-left: 1px solid var(--line); }
+.opp-cell { padding: 6px 4px !important; }
+.opp { display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 50px; }
+.opp-team { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+.opp-team .crest { width: 16px; height: 16px; }
+.res {
+  font-size: 11px; font-weight: 700; line-height: 1; padding: 3px 6px; border-radius: 4px;
+  color: #fff; white-space: nowrap;
+}
+.res.W { background: var(--win); }
+.res.D { background: var(--draw); }
+.res.L { background: var(--loss); }
+.res.live { background: var(--loss); animation: pulse 1.6s ease-in-out infinite; }
+.res.up { color: var(--muted); background: none; font-weight: 500; padding: 3px 0; }
+@keyframes pulse { 50% { opacity: .55; } }
+
+/* Keep rank + team visible while scrolling sideways */
+.standings .sticky { position: sticky; z-index: 1; background: var(--surface); }
+.standings .pos.sticky { left: 0; }
+.standings .team.sticky { left: 44px; box-shadow: 1px 0 0 var(--line); }
+.standings tbody tr:hover .sticky { background: var(--row-hover); }

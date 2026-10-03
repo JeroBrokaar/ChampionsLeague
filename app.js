@@ -27,21 +27,69 @@ function crest(url) {
   return url ? `<img class="crest" src="${esc(url)}" alt="" loading="lazy">` : `<span class="crest"></span>`;
 }
 
-function renderTable(rows) {
+// Short codes where football-data's TLA is ambiguous or unclear.
+const ABBR = { 5: "BAY", 81: "BAR", 5721: "BOD" };
+const abbr = (t) => ABBR[t.id] || t.tla || (t.shortName || t.name).slice(0, 3).toUpperCase();
+const SLOTS = ["1H", "1A", "2H", "2A", "3H", "3A", "4H", "4A"];
+
+// teamId -> { "1H": match, "1A": match, ... } for the league phase.
+function buildOpponentGrid(matches, pots) {
+  const potOf = {};
+  for (const [pot, ids] of Object.entries(pots)) ids.forEach((id) => (potOf[id] = pot));
+  const grid = {};
+  for (const m of matches) {
+    if (m.stage !== "LEAGUE_STAGE" || !m.homeTeam?.id || !m.awayTeam?.id) continue;
+    (grid[m.homeTeam.id] ??= {})[`${potOf[m.awayTeam.id]}H`] = m;
+    (grid[m.awayTeam.id] ??= {})[`${potOf[m.homeTeam.id]}A`] = m;
+  }
+  return grid;
+}
+
+function opponentCell(m, slot) {
+  const start = slot.endsWith("H") ? " pot-start" : "";
+  if (!m) return `<td class="opp-cell${start}"></td>`;
+  const home = slot.endsWith("H");
+  const opp = home ? m.awayTeam : m.homeTeam;
+  const ft = m.score?.fullTime ?? {};
+  const live = LIVE.has(m.status);
+  const date = new Date(m.utcDate).toLocaleDateString([], { day: "numeric", month: "short" });
+  let res, label;
+  if (m.status === "FINISHED" || live) {
+    const mine = home ? ft.home : ft.away;
+    const theirs = home ? ft.away : ft.home;
+    const outcome = live ? "live" : mine > theirs ? "W" : mine < theirs ? "L" : "D";
+    label = `${ft.home ?? 0}–${ft.away ?? 0}`;
+    res = `<span class="res ${outcome}">${label}</span>`;
+  } else {
+    label = date;
+    res = `<span class="res up">${date}</span>`;
+  }
+  const title = `${home ? "vs" : "at"} ${opp.name} · ${label}${m.status === "FINISHED" || live ? ` · ${date}` : ""}`;
+  return `<td class="opp-cell${start}" title="${esc(title)}">
+    <div class="opp">
+      <span class="opp-team">${crest(opp.crest)}<span>${esc(abbr(opp))}</span></span>
+      ${res}
+    </div>
+  </td>`;
+}
+
+function renderTable(rows, grid) {
   const body = $("#table-body");
   if (!rows.length) {
-    body.innerHTML = `<tr><td colspan="11" class="empty">No standings yet.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="18" class="empty">No standings yet.</td></tr>`;
     return;
   }
-  body.innerHTML = rows.map((r) => {
+  body.innerHTML = rows.map((r, i) => {
     const gdClass = r.goalDifference > 0 ? "gd-pos" : r.goalDifference < 0 ? "gd-neg" : "";
     const gd = r.goalDifference > 0 ? `+${r.goalDifference}` : r.goalDifference;
-    const form = (r.form || "").split(/[,\s]*/).filter((x) => /^[WDL]$/.test(x)).slice(-5);
-    const cut = r.position === 8 || r.position === 24 ? " cut" : "";
-    return `<tr class="${zone(r.position)}${cut}">
-      <td class="pos">${r.position}</td>
-      <td class="team"><div class="team-cell">${crest(r.team.crest)}<span class="team-name">${esc(r.team.shortName || r.team.name)}</span></div></td>
-      <td>${r.playedGames}</td>
+    // Use the row index, not r.position: tied teams share a position in the data.
+    const cut = i === 7 || i === 23 ? " cut" : "";
+    const cells = grid[r.team.id] || {};
+    return `<tr class="${zone(i + 1)}${cut}">
+      <td class="pos sticky">${r.position}</td>
+      <td class="team sticky"><div class="team-cell">${crest(r.team.crest)}<span class="team-name">${esc(r.team.shortName || r.team.name)}</span></div></td>
+      ${SLOTS.map((s) => opponentCell(cells[s], s)).join("")}
+      <td class="pot-start">${r.playedGames}</td>
       <td>${r.won}</td>
       <td>${r.draw}</td>
       <td>${r.lost}</td>
@@ -49,7 +97,6 @@ function renderTable(rows) {
       <td class="hide-sm">${r.goalsAgainst}</td>
       <td class="${gdClass}">${gd}</td>
       <td class="pts">${r.points}</td>
-      <td class="hide-sm"><span class="form">${form.map((f) => `<i class="${f}">${f}</i>`).join("")}</span></td>
     </tr>`;
   }).join("");
 }
@@ -157,16 +204,17 @@ if (location.hash === "#matches") showView("matches");
 
 (async function init() {
   try {
-    const [standings, matches] = await Promise.all([
+    const [standings, matches, pots] = await Promise.all([
       loadJson("data/standings.json"),
       loadJson("data/matches.json").catch(() => ({ matches: [] })),
+      loadJson("pots.json").catch(() => ({ pots: {} })),
     ]);
     if (standings.season) {
       const s = new Date(standings.season.startDate).getFullYear();
       const e = new Date(standings.season.endDate).getFullYear();
       $("#season").textContent = `Season ${s}/${String(e).slice(-2)} · League phase`;
     }
-    renderTable(standings.table || []);
+    renderTable(standings.table || [], buildOpponentGrid(matches.matches || [], pots.pots || {}));
     setupMatches(matches.matches || []);
     if (standings.updated) {
       $("#updated").textContent = `Updated ${new Date(standings.updated).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}`;
@@ -174,7 +222,7 @@ if (location.hash === "#matches") showView("matches");
   } catch (err) {
     console.error(err);
     $("#table-body").innerHTML =
-      `<tr><td colspan="11" class="empty">No data yet. It appears after the GitHub Action has run once.</td></tr>`;
+      `<tr><td colspan="18" class="empty">No data yet. It appears after the GitHub Action has run once.</td></tr>`;
     $("#match-list").innerHTML = `<div class="card empty">No data yet.</div>`;
   }
 })();

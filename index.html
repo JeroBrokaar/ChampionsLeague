@@ -34,21 +34,30 @@
           <table class="standings">
             <thead>
               <tr>
-                <th class="pos">#</th>
-                <th class="team">Team</th>
-                <th title="Played">P</th>
-                <th title="Won">W</th>
-                <th title="Drawn">D</th>
-                <th title="Lost">L</th>
-                <th class="hide-sm" title="Goals for">GF</th>
-                <th class="hide-sm" title="Goals against">GA</th>
-                <th title="Goal difference">GD</th>
-                <th class="pts" title="Points">Pts</th>
-                <th class="hide-sm form-col">Form</th>
+                <th class="pos sticky" rowspan="2">#</th>
+                <th class="team sticky" rowspan="2">Team</th>
+                <th class="pot-head pot-start" colspan="2">Pot 1</th>
+                <th class="pot-head pot-start" colspan="2">Pot 2</th>
+                <th class="pot-head pot-start" colspan="2">Pot 3</th>
+                <th class="pot-head pot-start" colspan="2">Pot 4</th>
+                <th class="pot-start" rowspan="2" title="Played">P</th>
+                <th rowspan="2" title="Won">W</th>
+                <th rowspan="2" title="Drawn">D</th>
+                <th rowspan="2" title="Lost">L</th>
+                <th class="hide-sm" rowspan="2" title="Goals for">GF</th>
+                <th class="hide-sm" rowspan="2" title="Goals against">GA</th>
+                <th rowspan="2" title="Goal difference">GD</th>
+                <th class="pts" rowspan="2" title="Points">Pts</th>
+              </tr>
+              <tr class="ha-row">
+                <th class="pot-start" title="Home">H</th><th title="Away">A</th>
+                <th class="pot-start" title="Home">H</th><th title="Away">A</th>
+                <th class="pot-start" title="Home">H</th><th title="Away">A</th>
+                <th class="pot-start" title="Home">H</th><th title="Away">A</th>
               </tr>
             </thead>
             <tbody id="table-body">
-              <tr><td colspan="11" class="empty">Loading…</td></tr>
+              <tr><td colspan="18" class="empty">Loading…</td></tr>
             </tbody>
           </table>
         </div>
