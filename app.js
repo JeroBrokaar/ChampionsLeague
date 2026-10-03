@@ -148,11 +148,7 @@ function resultCell(results, id) {
 
 /* ---------- Prediction ---------- */
 
-// Learns from finished past seasons: for each "event" (e.g. home win vs Pot 1, or 6 points
-// from both Pot 4 games), how often teams with that event finished top 8 / top 24.
-// A team's estimate starts from its pot history and adds the effect of each of its results.
-const PRIOR_WEIGHT = 2; // pulls small samples toward the overall rate
-const BASE = { top8: 8 / 36, top24: 24 / 36 };
+// The Top 8 / Top 24 columns come from the season simulation (see Simulation below).
 
 function potIndex(pots) {
   const potOf = {};
@@ -160,134 +156,32 @@ function potIndex(pots) {
   return potOf;
 }
 
-// Events for one team: single matches, replaced by the pot total once both games vs that pot are played.
-function teamEvents(teamId, finishedLeague, potOf) {
-  const byPot = {};
-  for (const m of finishedLeague) {
-    const home = m.homeTeam.id === teamId;
-    if (!home && m.awayTeam.id !== teamId) continue;
-    const opp = home ? m.awayTeam.id : m.homeTeam.id;
-    const pot = potOf[opp];
-    if (!pot) continue;
-    const { home: h, away: a } = m.score.fullTime;
-    const mine = home ? h : a, theirs = home ? a : h;
-    const res = mine > theirs ? "W" : mine < theirs ? "L" : "D";
-    (byPot[pot] ??= []).push({ venue: home ? "H" : "A", res, pts: res === "W" ? 3 : res === "D" ? 1 : 0 });
-  }
-  const events = [];
-  for (const [pot, games] of Object.entries(byPot)) {
-    if (games.length >= 2) events.push(`p:${pot}:${games.reduce((s, g) => s + g.pts, 0)}`);
-    else games.forEach((g) => events.push(`m:${pot}:${g.venue}:${g.res}`));
-  }
-  return events;
-}
-
-// Every event a team had in a finished season: all single matches and all pot totals.
-function allTeamEvents(teamId, finishedLeague, potOf) {
-  const singles = [], byPot = {};
-  for (const m of finishedLeague) {
-    const home = m.homeTeam.id === teamId;
-    if (!home && m.awayTeam.id !== teamId) continue;
-    const pot = potOf[home ? m.awayTeam.id : m.homeTeam.id];
-    if (!pot) continue;
-    const { home: h, away: a } = m.score.fullTime;
-    const mine = home ? h : a, theirs = home ? a : h;
-    const res = mine > theirs ? "W" : mine < theirs ? "L" : "D";
-    singles.push(`m:${pot}:${home ? "H" : "A"}:${res}`);
-    byPot[pot] = (byPot[pot] || 0) + (res === "W" ? 3 : res === "D" ? 1 : 0);
-  }
-  return [...singles, ...Object.entries(byPot).map(([pot, pts]) => `p:${pot}:${pts}`)];
-}
-
-function buildModel(pastSeasons) {
-  const counts = {};
-  for (const { table, matches, pots } of pastSeasons) {
-    const potOf = potIndex(pots);
-    const league = matches.filter((m) => m.stage === "LEAGUE_STAGE" && m.status === "FINISHED");
-    table.forEach((r, i) => {
-      const pos = i + 1;
-      const events = allTeamEvents(r.team.id, league, potOf);
-      if (potOf[r.team.id]) events.push(`pot:${potOf[r.team.id]}`);
-      for (const e of events) {
-        const c = (counts[e] ??= { n: 0, top8: 0, top24: 0 });
-        c.n++;
-        if (pos <= 8) c.top8++;
-        if (pos <= 24) c.top24++;
-      }
-    });
-  }
-  const prob = (e, key) => {
-    const c = counts[e] || { n: 0, top8: 0, top24: 0 };
-    return { p: (c[key] + PRIOR_WEIGHT * BASE[key]) / (c.n + PRIOR_WEIGHT), n: c.n };
-  };
-  return { counts, prob, seasons: pastSeasons.length };
-}
-
 const logit = (p) => { const c = Math.min(Math.max(p, 1e-4), 1 - 1e-4); return Math.log(c / (1 - c)); };
 const sigmoid = (x) => 1 / (1 + Math.exp(-x));
 
-// Raw estimate: start from the pot's history, then let every result push the chance
-// up or down by how much it differs from the overall rate (effects add up in log-odds).
-// Backtested on 2024/25 and 2025/26, this beat averaging the percentages.
-function predictTeam(model, teamId, finishedLeague, potOf) {
-  const events = teamEvents(teamId, finishedLeague, potOf);
-  const potEvent = potOf[teamId] ? `pot:${potOf[teamId]}` : null;
-  const parts = [potEvent, ...events].filter(Boolean).map((e) => ({ e, top8: model.prob(e, "top8"), top24: model.prob(e, "top24") }));
-  const combine = (key) => {
-    let x = logit(potEvent ? model.prob(potEvent, key).p : BASE[key]);
-    for (const e of events) x += logit(model.prob(e, key).p) - logit(BASE[key]);
-    return sigmoid(x);
-  };
-  return { top8: combine("top8"), top24: combine("top24"), parts };
-}
-
-// Scale estimates so they add up to the number of places (8 or 24). Teams already
-// decided stay at 0 or 1; the rest get one common shift in log-odds, which keeps
-// every value between 0 and 1 and preserves the order.
-function normalize(raw, fixed, places) {
-  const out = new Map(fixed);
-  const open = [...raw].filter(([id]) => !fixed.has(id));
-  const target = places - [...fixed.values()].reduce((s, v) => s + v, 0);
-  if (!open.length) return out;
-  if (target <= 0) { open.forEach(([id]) => out.set(id, 0)); return out; }
-  if (target >= open.length) { open.forEach(([id]) => out.set(id, 1)); return out; }
-  const clamp = (p) => Math.min(Math.max(p, 1e-4), 1 - 1e-4);
-  const logit = open.map(([id, p]) => [id, Math.log(clamp(p) / (1 - clamp(p)))]);
-  const total = (c) => logit.reduce((s, [, l]) => s + 1 / (1 + Math.exp(-(l + c))), 0);
-  let lo = -30, hi = 30;
-  for (let i = 0; i < 60; i++) { const mid = (lo + hi) / 2; if (total(mid) < target) lo = mid; else hi = mid; }
-  const c = (lo + hi) / 2;
-  logit.forEach(([id, l]) => out.set(id, 1 / (1 + Math.exp(-(l + c)))));
-  return out;
-}
-
-function predictAll(model, table, finishedLeague, potOf, status) {
-  const raw = new Map(table.map((r) => [r.team.id, predictTeam(model, r.team.id, finishedLeague, potOf)]));
-  const fixed8 = new Map(), fixed24 = new Map();
-  for (const r of table) {
-    const s = status?.get(r.team.id);
-    if (s === "r16") { fixed8.set(r.team.id, 1); fixed24.set(r.team.id, 1); }
-    else if (s === "top24") fixed24.set(r.team.id, 1);
-    else if (s === "po") { fixed8.set(r.team.id, 0); fixed24.set(r.team.id, 1); }
-    else if (s === "no-top8") fixed8.set(r.team.id, 0);
-    else if (s === "out") { fixed8.set(r.team.id, 0); fixed24.set(r.team.id, 0); }
+// One simulation per season and data update, shared by the table and the Simulation tab.
+const simCache = new Map();
+function seasonSimulation(seasonId) {
+  if (!simCache.has(seasonId)) {
+    simCache.set(seasonId, (async () => {
+      const pots = allPots[seasonId];
+      if (!pots) return null;
+      const [standings, matches] = await fetchSeason(seasonId);
+      const league = (matches.matches || []).filter((m) => m.stage === "LEAGUE_STAGE");
+      if (!league.length || league.every((m) => m.status === "FINISHED")) return { finished: true };
+      const past = [];
+      for (const meta of seasonIndex) {
+        if (meta.id === seasonId || !allPots[meta.id]) continue;
+        const [, m] = await fetchSeason(meta.id);
+        const pastLeague = (m.matches || []).filter((x) => x.stage === "LEAGUE_STAGE");
+        if (pastLeague.length && pastLeague.every((x) => x.status === "FINISHED")) past.push({ matches: m.matches, pots: allPots[meta.id] });
+      }
+      if (!past.length) return null;
+      const sim = simulateSeason(standings.table, league, potIndex(pots), buildOddsModel(past), { seed: simSeed(standings.updated) });
+      return { sim, ...mostLikelyTable(standings.table, sim.games) };
+    })().catch((err) => { console.error(err); return null; }));
   }
-  const top8 = normalize(new Map([...raw].map(([id, p]) => [id, p.top8])), fixed8, 8);
-  const top24 = normalize(new Map([...raw].map(([id, p]) => [id, p.top24])), fixed24, 24);
-  return new Map([...raw].map(([id, p]) => [id, { ...p, raw8: p.top8, raw24: p.top24, top8: top8.get(id), top24: top24.get(id) }]));
-}
-
-// Model from all finished seasons with pot data, except the one being predicted.
-async function modelFor(excludeId) {
-  const past = [];
-  for (const meta of seasonIndex) {
-    if (meta.id === excludeId || !allPots[meta.id]) continue;
-    const [standings, matches] = await fetchSeason(meta.id);
-    const league = (matches.matches || []).filter((m) => m.stage === "LEAGUE_STAGE");
-    if (!league.length || league.some((m) => m.status !== "FINISHED")) continue;
-    past.push({ table: standings.table, matches: matches.matches, pots: allPots[meta.id] });
-  }
-  return past.length ? buildModel(past) : null;
+  return simCache.get(seasonId);
 }
 
 const pctText = (p) => `${Math.round(p * 100)}%`;
@@ -460,12 +354,8 @@ async function loadSeason(id) {
   // Predictions only while the league phase is running.
   let preds = null;
   if (status && pots) {
-    const model = await modelFor(String(s)).catch(() => null);
-    if (model) {
-      const potOf = potIndex(pots);
-      const finished = (matches.matches || []).filter((m) => m.stage === "LEAGUE_STAGE" && m.status === "FINISHED");
-      preds = predictAll(model, table, finished, potOf, status);
-    }
+    const result = await seasonSimulation(String(s));
+    if (result?.sim) preds = new Map(result.sim.teams.map((t) => [t.team.id, t]));
   }
   $(".standings").classList.toggle("no-result", !results);
   $(".standings").classList.toggle("no-pred", !preds);
@@ -686,25 +576,14 @@ async function loadSim() {
   const box = $("#sim");
   try {
     const current = seasonIndex.find((x) => x.current);
-    const pots = current && allPots[current.id];
-    if (!current || !pots) throw new Error("Simulation needs the current season and its draw pots.");
-    const [standings, matches] = await fetchSeason(current.id);
-    const league = (matches.matches || []).filter((m) => m.stage === "LEAGUE_STAGE");
-    if (league.length && league.every((m) => m.status === "FINISHED")) {
+    if (!current) throw new Error("No current season.");
+    const result = await seasonSimulation(current.id);
+    if (result?.finished) {
       box.innerHTML = `<div class="card empty">The league phase of ${esc(current.label)} is finished, so there is nothing left to simulate.</div>`;
       return;
     }
-    const past = [];
-    for (const meta of seasonIndex) {
-      if (meta.current || !allPots[meta.id]) continue;
-      const [, m] = await fetchSeason(meta.id);
-      past.push({ matches: m.matches || [], pots: allPots[meta.id] });
-    }
-    if (!past.length) throw new Error("No past seasons to learn from.");
-    const odds = buildOddsModel(past);
-    const potOf = potIndex(pots);
-    const sim = simulateSeason(standings.table, league, potOf, odds, { seed: simSeed(standings.updated) });
-    const { picks, final } = mostLikelyTable(standings.table, sim.games);
+    if (!result?.sim) throw new Error("Simulation needs the current season's draw pots and a finished past season.");
+    const { sim, picks, final } = result;
     const mds = [...new Set(picks.map((g) => g.m.matchday))].sort((a, b) => a - b);
 
     box.innerHTML = `
