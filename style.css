@@ -275,6 +275,20 @@ body[data-view="stats"] .season-select { visibility: hidden; }
 .pvp-meta b { color: var(--text); }
 .pvp-empty { color: var(--muted); }
 
+.draw-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr)); gap: 12px 28px; }
+.draw-cols h3 { margin: 0 0 4px; font-size: 14px; font-weight: 700; }
+.draws td { padding: 7px 6px; }
+.draws .rank { color: var(--muted); width: 28px; }
+.draws th.draw-val, .draws td.draw-val { text-align: right; }
+.draws .draw-val { white-space: nowrap; }
+.draws .draw-val b { display: inline-block; width: 36px; font-variant-numeric: tabular-nums; }
+.draw-bar { display: inline-block; vertical-align: middle; width: 90px; height: 8px; margin-right: 8px; background: var(--bg); border-radius: 4px; overflow: hidden; }
+.draw-bar span { display: block; height: 100%; background: var(--text); border-radius: 4px; }
+.draws tbody tr:hover td { background: var(--row-hover); }
+.pot-badge { font-size: 11px; font-weight: 700; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; }
+.draws .pchip { display: inline-grid; }
+.ongoing-note { margin-top: -4px; }
+
 .pot-seasons { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); gap: 12px 28px; }
 .pot-season h3 { margin: 0 0 8px; font-size: 14px; font-weight: 700; }
 .pot-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line); }

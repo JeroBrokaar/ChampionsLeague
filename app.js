@@ -288,7 +288,100 @@ function seasonStats(meta, standings, matches) {
     meta, complete, played: finished.length, home, draw, away,
     cutoff8: table[7], cutoff24: table[23], potPositions, byMatchday: cutoffByMatchday(league),
     potVsPot: pots ? potVsPot(finished, pots) : null,
+    draws: drawDifficulty(table, league, pots),
   };
+}
+
+// For each team: average points per game of its 8 league-phase opponents,
+// leaving out the opponents' match against that team. Higher = harder draw.
+function drawDifficulty(table, league, pots) {
+  const potOf = {};
+  if (pots) for (const [pot, ids] of Object.entries(pots)) if (Array.isArray(ids)) ids.forEach((id) => (potOf[id] = pot));
+  const rowOf = new Map(table.map((r, i) => [r.team.id, { ...r, pos: i + 1 }]));
+  const list = [];
+  for (const r of table) {
+    const id = r.team.id;
+    const opps = [];
+    for (const m of league) {
+      if (m.homeTeam.id !== id && m.awayTeam.id !== id) continue;
+      const isHome = m.homeTeam.id === id;
+      const opp = rowOf.get(isHome ? m.awayTeam.id : m.homeTeam.id);
+      if (!opp) continue;
+      let pts = opp.points, games = opp.playedGames;
+      if (m.status === "FINISHED") {
+        const { home: h, away: a } = m.score.fullTime;
+        const oppGoals = isHome ? a : h, ownGoals = isHome ? h : a;
+        pts -= oppGoals > ownGoals ? 3 : oppGoals === ownGoals ? 1 : 0;
+        games -= 1;
+      }
+      opps.push({ team: opp.team, pos: opp.pos, home: isHome, ppg: games > 0 ? pts / games : null });
+    }
+    const rated = opps.filter((o) => o.ppg !== null);
+    if (!rated.length) continue;
+    const value = rated.reduce((s, o) => s + o.ppg, 0) / rated.length;
+    list.push({ team: r.team, pos: rowOf.get(id).pos, pot: potOf[id], value, opps });
+  }
+  return list.sort((a, b) => b.value - a.value);
+}
+
+function drawRowsHtml(list, offset, maxValue) {
+  return list.map((d, i) => {
+    const oppTitle = d.opps.map((o) => `${o.home ? "vs" : "at"} ${o.team.shortName || o.team.name} (${o.pos}${o.ppg === null ? "" : `, ${o.ppg.toFixed(2)}`})`).join("\n");
+    return `<tr title="${esc(oppTitle)}">
+      <td class="rank">${offset + i + 1}</td>
+      <td class="team"><div class="team-cell">${crest(d.team.crest)}<span>${esc(d.team.shortName || d.team.name)}</span></div></td>
+      <td>${d.pot ? `<span class="pot-badge">P${d.pot}</span>` : ""}</td>
+      <td><span class="pchip ${posZone(d.pos)}">${d.pos}</span></td>
+      <td class="draw-val"><div class="draw-bar"><span style="width:${(d.value / maxValue) * 100}%"></span></div><b>${d.value.toFixed(2)}</b></td>
+    </tr>`;
+  }).join("");
+}
+
+function drawTableHtml(list, offset, maxValue) {
+  return `<table class="mini draws">
+    <thead><tr><th>#</th><th class="team">Team</th><th>Pot</th><th>Pos</th><th class="draw-val">Opp. pts/game</th></tr></thead>
+    <tbody>${drawRowsHtml(list, offset, maxValue)}</tbody>
+  </table>`;
+}
+
+function drawsHtml(s) {
+  const list = s.draws;
+  const max = Math.max(...list.map((d) => d.value), 0.01);
+  const n = list.length;
+  const note = s.complete ? "" : `<p class="hint ongoing-note">${esc(s.meta.label)} is still running, so these numbers will change.</p>`;
+  return `${note}
+    <div class="draw-cols">
+      <div><h3>Hardest draws</h3>${drawTableHtml(list.slice(0, 10), 0, max)}</div>
+      <div><h3>Easiest draws</h3>${drawTableHtml(list.slice(-10).reverse(), 0, max).replace(/<td class="rank">(\d+)<\/td>/g, (_, k) => `<td class="rank">${n + 1 - Number(k)}</td>`)}</div>
+    </div>
+    <details class="chart-table">
+      <summary>Show all ${n} teams</summary>
+      ${drawTableHtml(list, 0, max)}
+    </details>`;
+}
+
+function drawsCard(stats) {
+  const withData = stats.filter((s) => s.draws.length && s.played);
+  if (!withData.length) return "";
+  const initial = withData.find((s) => s.complete) || withData[0];
+  return `<div class="card stat-card wide" id="draws-card">
+      <h2>Hardest draw</h2>
+      <p class="hint">How strong each team's 8 league-phase opponents turned out to be: their average points per game,
+        not counting their match against that team. Higher = harder draw. Hover a row to see the opponents.</p>
+      <div class="seg-buttons" role="group" aria-label="Season">
+        ${withData.map((s) => `<button type="button" data-draws="${s.meta.id}" class="${s === initial ? "active" : ""}">${esc(s.meta.label)}</button>`).join("")}
+      </div>
+      <div id="draws-body">${drawsHtml(initial)}</div>
+    </div>`;
+}
+
+function wireDraws(stats) {
+  const card = $("#draws-card");
+  if (!card) return;
+  card.querySelectorAll("[data-draws]").forEach((btn) => btn.addEventListener("click", () => {
+    card.querySelectorAll("[data-draws]").forEach((b) => b.classList.toggle("active", b === btn));
+    $("#draws-body").innerHTML = drawsHtml(stats.find((s) => s.meta.id === btn.dataset.draws));
+  }));
 }
 
 // grid[rowPot][colPot] = results of row-pot teams against col-pot teams (both sides counted).
@@ -535,6 +628,7 @@ function renderStats(stats) {
     ${cutoffCard("Needed for the play-offs", "Points and goal difference of the team in 24th place after the league phase.", stats, "cutoff24", "24th place")}
     ${cutoffChartsCard(stats)}
     ${potVsPotCard(stats)}
+    ${drawsCard(stats)}
     <div class="card stat-card wide">
       <h2>Home wins, draws, away wins</h2>
       <p class="hint">Share of league-phase matches.</p>
@@ -569,6 +663,7 @@ async function loadStats() {
     renderStats(stats);
     wireChartHover($("#stats"));
     wirePotVsPot(stats);
+    wireDraws(stats);
   } catch (err) {
     console.error(err);
     statsLoaded = false;
