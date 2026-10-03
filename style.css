@@ -199,6 +199,14 @@ td.gd-neg { color: var(--loss); }
 .result.res-winner { color: #1a1500; font-weight: 800; background: var(--accent); border-radius: 4px; padding: 2px 6px; }
 .result.res-winner::before { content: "★ "; }
 
+/* Prediction columns (current season, league phase only) */
+.standings.no-pred .pred-col { display: none; }
+.standings .pred-first { border-left: 1px solid var(--line); }
+.standings td.pred-col { min-width: 56px; cursor: help; }
+.pred-num { display: block; font-weight: 700; font-variant-numeric: tabular-nums; }
+.pred-bar { display: block; height: 4px; margin: 3px auto 0; width: 40px; background: var(--bg); border-radius: 2px; overflow: hidden; }
+.pred-bar span { display: block; height: 100%; background: var(--text); border-radius: 2px; }
+
 /* Seasons without draw-pot data hide the opponent columns */
 .standings.no-pots .pot-head,
 .standings.no-pots .ha-row,

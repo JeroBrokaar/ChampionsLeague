@@ -146,10 +146,133 @@ function resultCell(results, id) {
   return `<td class="result-col"><span class="result ${r.cls}">${esc(r.label)}</span></td>`;
 }
 
-function renderTable(rows, grid, status, results) {
+/* ---------- Prediction ---------- */
+
+// Learns from finished past seasons: for each "event" (e.g. home win vs Pot 1, or 6 points
+// from both Pot 4 games), how often teams with that event finished top 8 / top 24.
+// A team's estimate is the average over its own events so far.
+const PRIOR_WEIGHT = 2; // pulls small samples toward the overall rate
+const BASE = { top8: 8 / 36, top24: 24 / 36 };
+
+function potIndex(pots) {
+  const potOf = {};
+  for (const [pot, ids] of Object.entries(pots || {})) if (Array.isArray(ids)) ids.forEach((id) => (potOf[id] = pot));
+  return potOf;
+}
+
+// Events for one team: single matches, replaced by the pot total once both games vs that pot are played.
+function teamEvents(teamId, finishedLeague, potOf) {
+  const byPot = {};
+  for (const m of finishedLeague) {
+    const home = m.homeTeam.id === teamId;
+    if (!home && m.awayTeam.id !== teamId) continue;
+    const opp = home ? m.awayTeam.id : m.homeTeam.id;
+    const pot = potOf[opp];
+    if (!pot) continue;
+    const { home: h, away: a } = m.score.fullTime;
+    const mine = home ? h : a, theirs = home ? a : h;
+    const res = mine > theirs ? "W" : mine < theirs ? "L" : "D";
+    (byPot[pot] ??= []).push({ venue: home ? "H" : "A", res, pts: res === "W" ? 3 : res === "D" ? 1 : 0 });
+  }
+  const events = [];
+  for (const [pot, games] of Object.entries(byPot)) {
+    if (games.length >= 2) events.push(`p:${pot}:${games.reduce((s, g) => s + g.pts, 0)}`);
+    else games.forEach((g) => events.push(`m:${pot}:${g.venue}:${g.res}`));
+  }
+  return events;
+}
+
+// Every event a team had in a finished season: all single matches and all pot totals.
+function allTeamEvents(teamId, finishedLeague, potOf) {
+  const singles = [], byPot = {};
+  for (const m of finishedLeague) {
+    const home = m.homeTeam.id === teamId;
+    if (!home && m.awayTeam.id !== teamId) continue;
+    const pot = potOf[home ? m.awayTeam.id : m.homeTeam.id];
+    if (!pot) continue;
+    const { home: h, away: a } = m.score.fullTime;
+    const mine = home ? h : a, theirs = home ? a : h;
+    const res = mine > theirs ? "W" : mine < theirs ? "L" : "D";
+    singles.push(`m:${pot}:${home ? "H" : "A"}:${res}`);
+    byPot[pot] = (byPot[pot] || 0) + (res === "W" ? 3 : res === "D" ? 1 : 0);
+  }
+  return [...singles, ...Object.entries(byPot).map(([pot, pts]) => `p:${pot}:${pts}`)];
+}
+
+function buildModel(pastSeasons) {
+  const counts = {};
+  for (const { table, matches, pots } of pastSeasons) {
+    const potOf = potIndex(pots);
+    const league = matches.filter((m) => m.stage === "LEAGUE_STAGE" && m.status === "FINISHED");
+    table.forEach((r, i) => {
+      const pos = i + 1;
+      for (const e of allTeamEvents(r.team.id, league, potOf)) {
+        const c = (counts[e] ??= { n: 0, top8: 0, top24: 0 });
+        c.n++;
+        if (pos <= 8) c.top8++;
+        if (pos <= 24) c.top24++;
+      }
+    });
+  }
+  const prob = (e, key) => {
+    const c = counts[e] || { n: 0, top8: 0, top24: 0 };
+    return { p: (c[key] + PRIOR_WEIGHT * BASE[key]) / (c.n + PRIOR_WEIGHT), n: c.n };
+  };
+  return { counts, prob, seasons: pastSeasons.length };
+}
+
+function predictTeam(model, teamId, finishedLeague, potOf) {
+  const events = teamEvents(teamId, finishedLeague, potOf);
+  if (!events.length) return { top8: BASE.top8, top24: BASE.top24, parts: [] };
+  const parts = events.map((e) => ({ e, top8: model.prob(e, "top8"), top24: model.prob(e, "top24") }));
+  const avg = (key) => parts.reduce((s, x) => s + x[key].p, 0) / parts.length;
+  return { top8: avg("top8"), top24: avg("top24"), parts };
+}
+
+function eventLabel(e) {
+  const [kind, pot, a, b] = e.split(":");
+  if (kind === "p") return `${a} pt${a === "1" ? "" : "s"} from both Pot ${pot} games`;
+  const res = { W: "Win", D: "Draw", L: "Loss" }[b];
+  return `${res} ${a === "H" ? "at home vs" : "away vs"} Pot ${pot}`;
+}
+
+// Model from all finished seasons with pot data, except the one being predicted.
+async function modelFor(excludeId) {
+  const past = [];
+  for (const meta of seasonIndex) {
+    if (meta.id === excludeId || !allPots[meta.id]) continue;
+    const [standings, matches] = await fetchSeason(meta.id);
+    const league = (matches.matches || []).filter((m) => m.stage === "LEAGUE_STAGE");
+    if (!league.length || league.some((m) => m.status !== "FINISHED")) continue;
+    past.push({ table: standings.table, matches: matches.matches, pots: allPots[meta.id] });
+  }
+  return past.length ? buildModel(past) : null;
+}
+
+const pctText = (p) => `${Math.round(p * 100)}%`;
+
+function predCells(pred, status) {
+  if (!pred) return "";
+  // Mathematical certainties override the estimate.
+  let t8 = pred.top8, t24 = pred.top24;
+  if (status === "r16") { t8 = 1; t24 = 1; }
+  else if (status === "top24") t24 = 1;
+  else if (status === "po") { t8 = 0; t24 = 1; }
+  else if (status === "no-top8") t8 = 0;
+  else if (status === "out") { t8 = 0; t24 = 0; }
+  const lines = pred.parts.length
+    ? pred.parts.map((x) => `${eventLabel(x.e)}: top 8 ${pctText(x.top8.p)}, top 24 ${pctText(x.top24.p)} (${x.top8.n}× before)`).join("\n")
+    : "No matches played yet: overall average.";
+  const title = `Average of:\n${lines}`;
+  const cell = (p, first) => `<td class="pred-col${first ? " pred-first" : ""}" title="${esc(title)}">
+    <span class="pred-num">${pctText(p)}</span><span class="pred-bar"><span style="width:${p * 100}%"></span></span></td>`;
+  return cell(t8, true) + cell(t24, false);
+}
+
+function renderTable(rows, grid, status, results, preds) {
   const body = $("#table-body");
   if (!rows.length) {
-    body.innerHTML = `<tr><td colspan="19" class="empty">No standings yet.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="21" class="empty">No standings yet.</td></tr>`;
     return;
   }
   body.innerHTML = rows.map((r, i) => {
@@ -170,6 +293,7 @@ function renderTable(rows, grid, status, results) {
       <td class="hide-sm">${r.goalsAgainst}</td>
       <td class="${gdClass}">${gd}</td>
       <td class="pts">${r.points}</td>
+      ${preds ? predCells(preds.get(r.team.id), status?.get(r.team.id)) : ""}
       ${resultCell(results, r.team.id)}
     </tr>`;
   }).join("");
@@ -299,8 +423,21 @@ async function loadSeason(id) {
   $(".standings").classList.toggle("no-pots", !pots);
   $("#season").textContent = `Season ${s}/${String(s + 1).slice(-2)} · League phase`;
   const results = finalResults(matches.matches || []);
+  const table = standings.table || [];
+  const status = clinchStatus(table);
+  // Predictions only while the league phase is running.
+  let preds = null;
+  if (status && pots) {
+    const model = await modelFor(String(s)).catch(() => null);
+    if (model) {
+      const potOf = potIndex(pots);
+      const finished = (matches.matches || []).filter((m) => m.stage === "LEAGUE_STAGE" && m.status === "FINISHED");
+      preds = new Map(table.map((r) => [r.team.id, predictTeam(model, r.team.id, finished, potOf)]));
+    }
+  }
   $(".standings").classList.toggle("no-result", !results);
-  renderTable(standings.table || [], buildOpponentGrid(matches.matches || [], pots || {}), clinchStatus(standings.table || []), results);
+  $(".standings").classList.toggle("no-pred", !preds);
+  renderTable(table, buildOpponentGrid(matches.matches || [], pots || {}), status, results, preds);
   setupMatches(matches.matches || []);
   $("#updated").textContent = standings.updated
     ? `Updated ${new Date(standings.updated).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}`
@@ -328,7 +465,7 @@ function setupSeasonPicker(seasons) {
 function showError(err) {
   console.error(err);
   $("#table-body").innerHTML =
-    `<tr><td colspan="19" class="empty">No data yet. It appears after the GitHub Action has run once.</td></tr>`;
+    `<tr><td colspan="21" class="empty">No data yet. It appears after the GitHub Action has run once.</td></tr>`;
   $("#match-list").innerHTML = `<div class="card empty">No data yet.</div>`;
 }
 
