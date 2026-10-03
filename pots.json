@@ -1,11 +1,52 @@
 {
-  "season": "2026/27",
-  "source": "https://www.uefa.com/uefachampionsleague/news/02a8-21717d0c6cb5-03a9a5ff1552-1000--champions-league-league-phase-draw-pots-confirmed/",
-  "note": "football-data.org team ids per draw pot",
-  "pots": {
-    "1": [524, 5, 86, 64, 108, 65, 57, 81, 78],
-    "2": [4, 100, 498, 58, 503, 66, 851, 90, 674],
-    "3": [675, 521, 5721, 113, 721, 94, 613, 1887, 610],
-    "4": [930, 7509, 10, 1899, 2016, 7397, 546, 5720, 10233]
+  "note": "football-data.org team ids per draw pot, keyed by season start year",
+  "seasons": {
+    "2026": {
+      "source": "https://www.uefa.com/uefachampionsleague/news/02a8-21717d0c6cb5-03a9a5ff1552-1000--champions-league-league-phase-draw-pots-confirmed/",
+      "1": [
+        524,
+        5,
+        86,
+        64,
+        108,
+        65,
+        57,
+        81,
+        78
+      ],
+      "2": [
+        4,
+        100,
+        498,
+        58,
+        503,
+        66,
+        851,
+        90,
+        674
+      ],
+      "3": [
+        675,
+        521,
+        5721,
+        113,
+        721,
+        94,
+        613,
+        1887,
+        610
+      ],
+      "4": [
+        930,
+        7509,
+        10,
+        1899,
+        2016,
+        7397,
+        546,
+        5720,
+        10233
+      ]
+    }
   }
 }

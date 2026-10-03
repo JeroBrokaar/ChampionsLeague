@@ -37,7 +37,7 @@ const shortDate = (iso) => { const d = new Date(iso); return `${d.getDate()} ${M
 // teamId -> { "1H": match, "1A": match, ... } for the league phase.
 function buildOpponentGrid(matches, pots) {
   const potOf = {};
-  for (const [pot, ids] of Object.entries(pots)) ids.forEach((id) => (potOf[id] = pot));
+  for (const [pot, ids] of Object.entries(pots)) if (Array.isArray(ids)) ids.forEach((id) => (potOf[id] = pot));
   const grid = {};
   for (const m of matches) {
     if (m.stage !== "LEAGUE_STAGE" || !m.homeTeam?.id || !m.awayTeam?.id) continue;
@@ -181,6 +181,7 @@ function setupMatches(matches) {
     $(".matchday-bar").hidden = true;
     return;
   }
+  $(".matchday-bar").hidden = false;
   const select = $("#md-select");
   select.innerHTML = rounds.map((r, i) => `<option value="${i}">${esc(r.label)}</option>`).join("");
   select.onchange = () => renderRound(Number(select.value));
@@ -198,34 +199,67 @@ function showView(view) {
     t.setAttribute("aria-selected", active);
   });
   document.querySelectorAll(".view").forEach((v) => (v.hidden = v.id !== `view-${view}`));
-  history.replaceState(null, "", view === "table" ? location.pathname : `#${view}`);
+  history.replaceState(null, "", `${location.pathname}${location.search}${view === "table" ? "" : `#${view}`}`);
 }
 document.querySelectorAll(".tab").forEach((t) => t.addEventListener("click", () => showView(t.dataset.view)));
 if (location.hash === "#matches") showView("matches");
+
+/* ---------- Seasons ---------- */
+
+let allPots = {};
+
+async function loadSeason(id) {
+  const base = id ? `data/${id}` : "data";
+  const [standings, matches] = await Promise.all([
+    loadJson(`${base}/standings.json`),
+    loadJson(`${base}/matches.json`).catch(() => ({ matches: [] })),
+  ]);
+  const s = new Date(standings.season.startDate).getFullYear();
+  const pots = allPots[String(s)];
+  $(".standings").classList.toggle("no-pots", !pots);
+  $("#season").textContent = `Season ${s}/${String(s + 1).slice(-2)} · League phase`;
+  renderTable(standings.table || [], buildOpponentGrid(matches.matches || [], pots || {}));
+  setupMatches(matches.matches || []);
+  $("#updated").textContent = standings.updated
+    ? `Updated ${new Date(standings.updated).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}`
+    : "";
+}
+
+function setupSeasonPicker(seasons) {
+  const select = $("#season-select");
+  const wanted = new URLSearchParams(location.search).get("season");
+  const initial = seasons.find((x) => x.id === wanted) || seasons.find((x) => x.current) || seasons[0];
+  select.innerHTML = seasons.map((x) => `<option value="${x.id}">${esc(x.label)}</option>`).join("");
+  select.value = initial.id;
+  select.hidden = seasons.length < 2;
+  select.onchange = () => {
+    const chosen = seasons.find((x) => x.id === select.value);
+    const params = new URLSearchParams(location.search);
+    chosen.current ? params.delete("season") : params.set("season", chosen.id);
+    const qs = params.toString();
+    history.replaceState(null, "", `${location.pathname}${qs ? `?${qs}` : ""}${location.hash}`);
+    loadSeason(chosen.id).catch(showError);
+  };
+  return initial.id;
+}
+
+function showError(err) {
+  console.error(err);
+  $("#table-body").innerHTML =
+    `<tr><td colspan="18" class="empty">No data yet. It appears after the GitHub Action has run once.</td></tr>`;
+  $("#match-list").innerHTML = `<div class="card empty">No data yet.</div>`;
+}
 
 /* ---------- Boot ---------- */
 
 (async function init() {
   try {
-    const [standings, matches, pots] = await Promise.all([
-      loadJson("data/standings.json"),
-      loadJson("data/matches.json").catch(() => ({ matches: [] })),
-      loadJson("pots.json").catch(() => ({ pots: {} })),
-    ]);
-    if (standings.season) {
-      const s = new Date(standings.season.startDate).getFullYear();
-      const e = new Date(standings.season.endDate).getFullYear();
-      $("#season").textContent = `Season ${s}/${String(e).slice(-2)} · League phase`;
-    }
-    renderTable(standings.table || [], buildOpponentGrid(matches.matches || [], pots.pots || {}));
-    setupMatches(matches.matches || []);
-    if (standings.updated) {
-      $("#updated").textContent = `Updated ${new Date(standings.updated).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}`;
-    }
+    allPots = (await loadJson("pots.json").catch(() => ({ seasons: {} }))).seasons || {};
+    // Older deploys only have data/standings.json; fall back to that.
+    const index = await loadJson("data/seasons.json").catch(() => null);
+    const id = index?.seasons?.length ? setupSeasonPicker(index.seasons) : null;
+    await loadSeason(id);
   } catch (err) {
-    console.error(err);
-    $("#table-body").innerHTML =
-      `<tr><td colspan="18" class="empty">No data yet. It appears after the GitHub Action has run once.</td></tr>`;
-    $("#match-list").innerHTML = `<div class="card empty">No data yet.</div>`;
+    showError(err);
   }
 })();
