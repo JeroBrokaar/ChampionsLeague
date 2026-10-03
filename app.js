@@ -287,7 +287,85 @@ function seasonStats(meta, standings, matches) {
   return {
     meta, complete, played: finished.length, home, draw, away,
     cutoff8: table[7], cutoff24: table[23], potPositions, byMatchday: cutoffByMatchday(league),
+    potVsPot: pots ? potVsPot(finished, pots) : null,
   };
+}
+
+// grid[rowPot][colPot] = results of row-pot teams against col-pot teams (both sides counted).
+function potVsPot(finished, pots) {
+  const potOf = {};
+  for (const [pot, ids] of Object.entries(pots)) if (Array.isArray(ids)) ids.forEach((id) => (potOf[id] = pot));
+  const grid = {};
+  for (const r of "1234") { grid[r] = {}; for (const c of "1234") grid[r][c] = { w: 0, d: 0, l: 0 }; }
+  for (const m of finished) {
+    const hp = potOf[m.homeTeam.id], ap = potOf[m.awayTeam.id];
+    if (!hp || !ap) continue;
+    const { home: h, away: a } = m.score.fullTime;
+    const hk = h > a ? "w" : h < a ? "l" : "d";
+    const ak = hk === "w" ? "l" : hk === "l" ? "w" : "d";
+    grid[hp][ap][hk]++;
+    grid[ap][hp][ak]++;
+  }
+  return grid;
+}
+
+function sumPotVsPot(grids) {
+  const out = {};
+  for (const r of "1234") {
+    out[r] = {};
+    for (const c of "1234") {
+      out[r][c] = { w: 0, d: 0, l: 0 };
+      for (const g of grids) for (const k of "wdl") out[r][c][k] += g[r][c][k];
+    }
+  }
+  return out;
+}
+
+function potMatrixHtml(grid) {
+  const cell = (rec, same) => {
+    const n = rec.w + rec.d + rec.l;
+    if (!n) return `<td class="pvp-cell"><span class="pvp-empty">–</span></td>`;
+    const w = pct(rec.w, n), d = pct(rec.d, n), l = 100 - w - d;
+    const ppg = ((rec.w * 3 + rec.d) / n).toFixed(2);
+    // Same-pot games are counted from both sides, so each match appears twice.
+    const games = same ? n / 2 : n;
+    const seg = (cls, v) => (v ? `<span class="seg ${cls}" style="flex:${v}">${v >= 12 ? `${v}%` : ""}</span>` : "");
+    return `<td class="pvp-cell" title="${rec.w} won · ${rec.d} drawn · ${rec.l} lost · ${games} matches">
+      <div class="pvp-bar">${seg("home-win", w)}${seg("draw", d)}${seg("away-win", l)}</div>
+      <div class="pvp-meta"><b>${ppg}</b> pts/game · ${games} m</div>
+    </td>`;
+  };
+  return `<table class="pvp">
+    <thead><tr><th class="corner">vs →</th>${"1234".split("").map((c) => `<th>Pot ${c}</th>`).join("")}</tr></thead>
+    <tbody>${"1234".split("").map((r) => `<tr><th>Pot ${r}</th>${"1234".split("").map((c) => cell(grid[r][c], r === c)).join("")}</tr>`).join("")}</tbody>
+  </table>`;
+}
+
+function potVsPotCard(stats) {
+  const withData = stats.filter((s) => s.potVsPot && s.played);
+  if (!withData.length) return "";
+  const options = [{ id: "all", label: "All seasons" }, ...withData.map((s) => ({ id: s.meta.id, label: s.meta.label }))];
+  return `<div class="card stat-card wide" id="pvp-card">
+      <h2>Pot vs pot</h2>
+      <p class="hint">How teams from each pot (rows) did against teams from each pot (columns) in the league phase.
+        Green = won, yellow = draw, red = lost. Hover a cell for the exact numbers.</p>
+      <div class="seg-buttons" role="group" aria-label="Season">
+        ${options.map((o, i) => `<button type="button" data-pvp="${o.id}" class="${i === 0 ? "active" : ""}">${esc(o.label)}</button>`).join("")}
+      </div>
+      <div class="pvp-scroll" id="pvp-matrix">${potMatrixHtml(sumPotVsPot(withData.map((s) => s.potVsPot)))}</div>
+    </div>`;
+}
+
+function wirePotVsPot(stats) {
+  const card = $("#pvp-card");
+  if (!card) return;
+  const withData = stats.filter((s) => s.potVsPot && s.played);
+  card.querySelectorAll("[data-pvp]").forEach((btn) => btn.addEventListener("click", () => {
+    card.querySelectorAll("[data-pvp]").forEach((b) => b.classList.toggle("active", b === btn));
+    const id = btn.dataset.pvp;
+    const grids = (id === "all" ? withData : withData.filter((s) => s.meta.id === id)).map((s) => s.potVsPot);
+    $("#pvp-matrix").innerHTML = potMatrixHtml(sumPotVsPot(grids));
+  }));
 }
 
 // Points of the 8th and 24th team after each fully played matchday.
@@ -456,6 +534,7 @@ function renderStats(stats) {
     ${cutoffCard("Needed for the top 8", "Points and goal difference of the team in 8th place after the league phase.", stats, "cutoff8", "8th place")}
     ${cutoffCard("Needed for the play-offs", "Points and goal difference of the team in 24th place after the league phase.", stats, "cutoff24", "24th place")}
     ${cutoffChartsCard(stats)}
+    ${potVsPotCard(stats)}
     <div class="card stat-card wide">
       <h2>Home wins, draws, away wins</h2>
       <p class="hint">Share of league-phase matches.</p>
@@ -489,6 +568,7 @@ async function loadStats() {
     }));
     renderStats(stats);
     wireChartHover($("#stats"));
+    wirePotVsPot(stats);
   } catch (err) {
     console.error(err);
     statsLoaded = false;

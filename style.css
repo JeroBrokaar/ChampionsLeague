@@ -254,6 +254,27 @@ body[data-view="stats"] .season-select { visibility: hidden; }
 .chart-table .mini { margin-top: 8px; }
 .chart-table small { font-weight: 400; text-transform: none; }
 
+.seg-buttons { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.seg-buttons button {
+  font: inherit; font-size: 13px; font-weight: 600; color: var(--muted); cursor: pointer;
+  background: transparent; border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px;
+}
+.seg-buttons button:hover { color: var(--text); }
+.seg-buttons button.active { color: var(--bg); background: var(--text); border-color: var(--text); }
+
+.pvp-scroll { overflow-x: auto; }
+.pvp { width: 100%; min-width: 520px; border-collapse: separate; border-spacing: 6px; font-variant-numeric: tabular-nums; }
+.pvp th { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.pvp thead th { padding-bottom: 2px; }
+.pvp tbody th { text-align: left; white-space: nowrap; padding-right: 6px; width: 1%; }
+.pvp .corner { text-align: left; font-size: 10px; text-transform: none; letter-spacing: 0; font-weight: 500; }
+.pvp-cell { background: var(--bg); border-radius: 8px; padding: 8px; vertical-align: middle; }
+.pvp-bar { display: flex; height: 24px; border-radius: 6px; overflow: hidden; gap: 2px; }
+.pvp-bar .seg { min-width: 0; font-size: 11px; }
+.pvp-meta { margin-top: 5px; font-size: 11px; color: var(--muted); text-align: center; }
+.pvp-meta b { color: var(--text); }
+.pvp-empty { color: var(--muted); }
+
 .pot-seasons { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); gap: 12px 28px; }
 .pot-season h3 { margin: 0 0 8px; font-size: 14px; font-weight: 700; }
 .pot-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line); }
