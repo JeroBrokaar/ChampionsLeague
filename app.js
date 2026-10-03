@@ -76,7 +76,41 @@ function opponentCell(m, slot) {
   </td>`;
 }
 
-function renderTable(rows, grid) {
+/* ---------- Through / out ---------- */
+
+const LEAGUE_GAMES = 8;
+const STATUS = {
+  r16: { label: "R16 ✓", title: "Round of 16 secured", cls: "z1" },
+  top24: { label: "Top 24 ✓", title: "At least the play-offs secured", cls: "z2" },
+  po: { label: "Play-offs", title: "Play-offs secured, top 8 out of reach", cls: "z2" },
+  out: { label: "Out", title: "Eliminated", cls: "z3" },
+};
+
+// Conservative, points-only check: a team is "safe" for the top N only if at most N-1
+// others could still reach its current points, and "out" only if at least N others
+// already have more points than it can still reach. Ties count against the team.
+function clinchStatus(table) {
+  if (!table.length || table.every((r) => r.playedGames >= LEAGUE_GAMES)) return null;
+  const rows = table.map((r) => ({ id: r.team.id, min: r.points, max: r.points + 3 * (LEAGUE_GAMES - r.playedGames) }));
+  const status = new Map();
+  for (const t of rows) {
+    const canCatch = rows.filter((o) => o !== t && o.max >= t.min).length;
+    const surelyAhead = rows.filter((o) => o !== t && o.min > t.max).length;
+    const top8 = canCatch <= 7 ? "yes" : surelyAhead >= 8 ? "no" : "open";
+    const top24 = canCatch <= 23 ? "yes" : surelyAhead >= 24 ? "no" : "open";
+    let s = null;
+    if (top8 === "yes") s = "r16";
+    else if (top24 === "no") s = "out";
+    else if (top24 === "yes") s = top8 === "no" ? "po" : "top24";
+    else if (top8 === "no") s = "no-top8";
+    if (s) status.set(t.id, s);
+  }
+  return status;
+}
+
+const statusBadge = (s) => (STATUS[s] ? `<span class="status-badge ${STATUS[s].cls}" title="${STATUS[s].title}">${STATUS[s].label}</span>` : "");
+
+function renderTable(rows, grid, status) {
   const body = $("#table-body");
   if (!rows.length) {
     body.innerHTML = `<tr><td colspan="18" class="empty">No standings yet.</td></tr>`;
@@ -90,7 +124,7 @@ function renderTable(rows, grid) {
     const cells = grid[r.team.id] || {};
     return `<tr class="${zone(i + 1)}${cut}">
       <td class="pos sticky">${r.position}</td>
-      <td class="team sticky"><div class="team-cell">${crest(r.team.crest)}<span class="team-name">${esc(r.team.shortName || r.team.name)}</span></div></td>
+      <td class="team sticky"><div class="team-cell">${crest(r.team.crest)}<span class="team-name">${esc(r.team.shortName || r.team.name)}</span>${status ? statusBadge(status.get(r.team.id)) : ""}</div></td>
       ${SLOTS.map((s) => opponentCell(cells[s], s)).join("")}
       <td class="pot-start">${r.playedGames}</td>
       <td>${r.won}</td>
@@ -227,7 +261,7 @@ async function loadSeason(id) {
   const pots = allPots[String(s)];
   $(".standings").classList.toggle("no-pots", !pots);
   $("#season").textContent = `Season ${s}/${String(s + 1).slice(-2)} · League phase`;
-  renderTable(standings.table || [], buildOpponentGrid(matches.matches || [], pots || {}));
+  renderTable(standings.table || [], buildOpponentGrid(matches.matches || [], pots || {}), clinchStatus(standings.table || []));
   setupMatches(matches.matches || []);
   $("#updated").textContent = standings.updated
     ? `Updated ${new Date(standings.updated).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}`
@@ -289,7 +323,38 @@ function seasonStats(meta, standings, matches) {
     cutoff8: table[7], cutoff24: table[23], potPositions, byMatchday: cutoffByMatchday(league),
     potVsPot: pots ? potVsPot(finished, pots) : null,
     draws: drawDifficulty(table, league, pots),
+    table, status: clinchStatus(table),
   };
+}
+
+function throughOutCard(stats) {
+  const s = stats.find((x) => x.status && x.played);
+  if (!s) return "";
+  const groups = [
+    ["r16", "Round of 16 secured", "z1"],
+    ["top24", "At least the play-offs", "z2"],
+    ["po", "Play-offs (top 8 out of reach)", "z2"],
+    ["no-top8", "Top 8 out of reach, top 24 still open", "z2"],
+    ["out", "Eliminated", "z3"],
+  ];
+  const teamsWith = (key) => s.table.filter((r) => s.status.get(r.team.id) === key);
+  const open = s.table.filter((r) => !s.status.has(r.team.id)).length;
+  const blocks = groups.map(([key, title, cls]) => {
+    const teams = teamsWith(key);
+    if (!teams.length) return "";
+    return `<div class="status-group">
+      <h3><span class="dot ${cls}-dot"></span>${esc(title)} <span class="count">${teams.length}</span></h3>
+      <div class="status-teams">${teams.map((r) => `<span class="status-team">${crest(r.team.crest)}${esc(r.team.shortName || r.team.name)}</span>`).join("")}</div>
+    </div>`;
+  }).join("");
+  const played = Math.min(...s.table.map((r) => r.playedGames));
+  return `<div class="card stat-card wide">
+      <h2>Already through or out · ${esc(s.meta.label)}</h2>
+      <p class="hint">Decided on points alone, assuming the worst case for each team: a team only counts as safe when
+        nobody can catch it any more. Tiebreakers aren't used, so a status can appear a little later than in the media.</p>
+      ${blocks || `<p class="empty-note">Nothing is decided yet after ${played} matchday${played === 1 ? "" : "s"}. The first teams usually clinch something from matchday 5 or 6.</p>`}
+      ${blocks ? `<p class="hint">Still open: ${open} team${open === 1 ? "" : "s"}.</p>` : ""}
+    </div>`;
 }
 
 // For each team: average points per game of its 8 league-phase opponents,
@@ -624,6 +689,7 @@ function renderStats(stats) {
     </div>`).join("");
 
   $("#stats").innerHTML = `
+    ${throughOutCard(stats)}
     ${cutoffCard("Needed for the top 8", "Points and goal difference of the team in 8th place after the league phase.", stats, "cutoff8", "8th place")}
     ${cutoffCard("Needed for the play-offs", "Points and goal difference of the team in 24th place after the league phase.", stats, "cutoff24", "24th place")}
     ${cutoffChartsCard(stats)}

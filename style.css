@@ -289,6 +289,28 @@ body[data-view="stats"] .season-select { visibility: hidden; }
 .draws .pchip { display: inline-grid; }
 .ongoing-note { margin-top: -4px; }
 
+.status-badge {
+  margin-left: 2px; font-size: 10px; font-weight: 700; white-space: nowrap; color: var(--text);
+  border: 1px solid; border-radius: 4px; padding: 1px 5px; cursor: default;
+}
+.status-badge.z1 { border-color: var(--win); }
+.status-badge.z2 { border-color: var(--draw-cell); }
+.status-badge.z3 { border-color: var(--loss); color: var(--muted); }
+.z1-dot { background: var(--win); }
+.z2-dot { background: var(--draw-cell); }
+.z3-dot { background: var(--loss); }
+.status-group { padding: 10px 0; border-bottom: 1px solid var(--line); }
+.status-group:last-of-type { border-bottom: 0; }
+.status-group h3 { margin: 0 0 8px; font-size: 14px; font-weight: 700; display: flex; align-items: center; }
+.status-group .count { margin-left: 8px; color: var(--muted); font-weight: 600; }
+.status-teams { display: flex; flex-wrap: wrap; gap: 6px; }
+.status-team {
+  display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600;
+  background: var(--bg); border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px 4px 6px;
+}
+.status-team .crest { width: 18px; height: 18px; }
+.empty-note { color: var(--muted); font-size: 14px; margin: 0; }
+
 .pot-seasons { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); gap: 12px 28px; }
 .pot-season h3 { margin: 0 0 8px; font-size: 14px; font-weight: 700; }
 .pot-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line); }
