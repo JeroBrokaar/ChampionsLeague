@@ -428,6 +428,7 @@ function showView(view) {
   document.body.dataset.view = view;
   history.replaceState(null, "", `${location.pathname}${location.search}${view === "table" ? "" : `#${view}`}`);
   if (view === "stats") loadStats();
+  if (view === "sim") loadSim();
 }
 document.querySelectorAll(".tab").forEach((t) => t.addEventListener("click", () => showView(t.dataset.view)));
 
@@ -498,6 +499,244 @@ function showError(err) {
   $("#table-body").innerHTML =
     `<tr><td colspan="21" class="empty">No data yet. It appears after the GitHub Action has run once.</td></tr>`;
   $("#match-list").innerHTML = `<div class="card empty">No data yet.</div>`;
+}
+
+/* ---------- Simulation ---------- */
+
+const SIM_RUNS = 10000;
+const ODDS_PRIOR = 3;   // pulls thin pot-vs-pot samples toward the overall home/draw/away split
+const FORM_SHRINK = 3;  // extra "games" of zero form, so one result doesn't swing a team too far
+// Log-odds shift per point-per-game of form difference. Backtests on 2024/25 and 2025/26 were
+// most accurate at 0 (points already in the table carry the form), so it is off for now.
+const FORM_WEIGHT = 0;
+
+// Home/draw/away rates for every (home pot, away pot) pair in past league phases.
+function buildOddsModel(pastSeasons) {
+  const counts = {}, all = { h: 0, d: 0, a: 0 };
+  for (const { matches, pots } of pastSeasons) {
+    const potOf = potIndex(pots);
+    for (const m of matches) {
+      if (m.stage !== "LEAGUE_STAGE" || m.status !== "FINISHED") continue;
+      const hp = potOf[m.homeTeam.id], ap = potOf[m.awayTeam.id];
+      if (!hp || !ap) continue;
+      const { home: h, away: a } = m.score.fullTime;
+      const k = h > a ? "h" : h < a ? "a" : "d";
+      const c = (counts[`${hp}${ap}`] ??= { h: 0, d: 0, a: 0 });
+      c[k]++; all[k]++;
+    }
+  }
+  const n = all.h + all.d + all.a || 1;
+  const overall = { h: all.h / n, d: all.d / n, a: all.a / n };
+  return (hp, ap) => {
+    const c = counts[`${hp}${ap}`] || { h: 0, d: 0, a: 0 };
+    const t = c.h + c.d + c.a + ODDS_PRIOR;
+    return { h: (c.h + ODDS_PRIOR * overall.h) / t, d: (c.d + ODDS_PRIOR * overall.d) / t, a: (c.a + ODDS_PRIOR * overall.a) / t };
+  };
+}
+
+// Form: points per game above/below what the pot odds expected, shrunk toward zero.
+function teamForm(table, finishedLeague, potOf, odds) {
+  const exp = new Map(), act = new Map(), games = new Map();
+  for (const m of finishedLeague) {
+    const hp = potOf[m.homeTeam.id], ap = potOf[m.awayTeam.id];
+    if (!hp || !ap) continue;
+    const o = odds(hp, ap);
+    const { home: h, away: a } = m.score.fullTime;
+    const add = (map, id, v) => map.set(id, (map.get(id) || 0) + v);
+    add(exp, m.homeTeam.id, 3 * o.h + o.d); add(exp, m.awayTeam.id, 3 * o.a + o.d);
+    add(act, m.homeTeam.id, h > a ? 3 : h === a ? 1 : 0); add(act, m.awayTeam.id, a > h ? 3 : h === a ? 1 : 0);
+    add(games, m.homeTeam.id, 1); add(games, m.awayTeam.id, 1);
+  }
+  return new Map(table.map((r) => {
+    const id = r.team.id;
+    return [id, ((act.get(id) || 0) - (exp.get(id) || 0)) / ((games.get(id) || 0) + FORM_SHRINK)];
+  }));
+}
+
+// Match odds: pot-vs-pot rates, with the win/loss split tilted by the form difference.
+function matchOdds(m, potOf, odds, form, formWeight = FORM_WEIGHT) {
+  const o = odds(potOf[m.homeTeam.id], potOf[m.awayTeam.id]);
+  const shift = formWeight * ((form.get(m.homeTeam.id) || 0) - (form.get(m.awayTeam.id) || 0));
+  const r = sigmoid(logit(o.h / (o.h + o.a)) + shift);
+  return { h: (1 - o.d) * r, d: o.d, a: (1 - o.d) * (1 - r) };
+}
+
+// Small seeded RNG so the same data always gives the same simulation.
+function rng(seed) {
+  let s = seed >>> 0;
+  return () => { s = (s + 0x6d2b79f5) >>> 0; let t = s; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+
+function simulateSeason(table, league, potOf, odds, { runs = SIM_RUNS, seed = 1, formWeight = FORM_WEIGHT } = {}) {
+  const finished = league.filter((m) => m.status === "FINISHED");
+  const remaining = league.filter((m) => m.status !== "FINISHED" && m.homeTeam?.id && m.awayTeam?.id);
+  const form = teamForm(table, finished, potOf, odds);
+  const ids = table.map((r) => r.team.id);
+  const idx = new Map(ids.map((id, i) => [id, i]));
+  const basePts = table.map((r) => r.points), baseGd = table.map((r) => r.goalDifference);
+  const games = remaining.map((m) => ({ m, hi: idx.get(m.homeTeam.id), ai: idx.get(m.awayTeam.id), o: matchOdds(m, potOf, odds, form, formWeight) }));
+  const n = ids.length;
+  const posCounts = ids.map(() => new Array(n).fill(0));
+  const ptsSum = new Array(n).fill(0);
+  const rand = rng(seed);
+  const pts = new Array(n), order = ids.map((_, i) => i), tie = new Array(n);
+  for (let run = 0; run < runs; run++) {
+    for (let i = 0; i < n; i++) { pts[i] = basePts[i]; tie[i] = rand(); }
+    for (const g of games) {
+      const u = rand();
+      if (u < g.o.h) pts[g.hi] += 3;
+      else if (u < g.o.h + g.o.d) { pts[g.hi] += 1; pts[g.ai] += 1; }
+      else pts[g.ai] += 3;
+    }
+    // Points first; current goal difference and then chance break ties.
+    order.sort((x, y) => pts[y] - pts[x] || baseGd[y] - baseGd[x] || tie[y] - tie[x]);
+    for (let p = 0; p < n; p++) { posCounts[order[p]][p]++; ptsSum[order[p]] += pts[order[p]]; }
+  }
+  const teams = table.map((r, i) => {
+    const pc = posCounts[i].map((c) => c / runs);
+    const sum = (a, b) => pc.slice(a, b).reduce((s, v) => s + v, 0);
+    return {
+      team: r.team, points: r.points, expPts: ptsSum[i] / runs,
+      avgPos: pc.reduce((s, v, p) => s + v * (p + 1), 0),
+      top8: sum(0, 8), top24: sum(0, 24), out: sum(24, n), dist: pc,
+    };
+  });
+  return { teams, games, remaining: remaining.length };
+}
+
+// The single most likely result of every remaining match, and the table it leads to.
+function mostLikelyTable(table, games) {
+  const pts = new Map(table.map((r) => [r.team.id, r.points]));
+  const picks = games.map((g) => {
+    const best = g.o.h >= g.o.a && g.o.h >= g.o.d ? "h" : g.o.a >= g.o.d ? "a" : "d";
+    const h = g.m.homeTeam.id, a = g.m.awayTeam.id;
+    if (best === "h") pts.set(h, pts.get(h) + 3);
+    else if (best === "a") pts.set(a, pts.get(a) + 3);
+    else { pts.set(h, pts.get(h) + 1); pts.set(a, pts.get(a) + 1); }
+    return { ...g, pick: best };
+  });
+  const final = table.map((r) => ({ team: r.team, now: r.points, points: pts.get(r.team.id), gd: r.goalDifference }))
+    .sort((x, y) => y.points - x.points || y.gd - x.gd);
+  return { picks, final };
+}
+
+let simLoaded = false;
+
+function simSeed(text) {
+  let h = 2166136261;
+  for (const ch of String(text)) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
+  return h >>> 0;
+}
+
+function distStrip(dist) {
+  const max = Math.max(...dist, 0.0001);
+  const best = dist.indexOf(Math.max(...dist));
+  return `<div class="dist" title="Most likely position: ${best + 1} (${pctText(dist[best])})">${dist.map((p, i) =>
+    `<span class="${posZone(i + 1)}" style="opacity:${p > 0 ? 0.12 + 0.88 * (p / max) : 0.04}"></span>`).join("")}</div>`;
+}
+
+function simChancesHtml(sim) {
+  const rows = sim.teams.slice().sort((a, b) => a.avgPos - b.avgPos);
+  const pctCell = (p) => `<td class="sim-pct">${p >= 0.995 ? "100%" : p > 0 && p < 0.005 ? "<1%" : pctText(p)}</td>`;
+  return `<div class="table-scroll"><table class="mini sim-table">
+    <thead><tr><th>#</th><th class="team">Team</th><th>Pts now</th><th>Exp. pts</th><th>Top 8</th><th>Top 24</th><th>Out</th><th class="dist-head">Final position · 1 → 36</th></tr></thead>
+    <tbody>${rows.map((t, i) => `<tr>
+      <td class="rank">${i + 1}</td>
+      <td class="team"><div class="team-cell">${crest(t.team.crest)}<span>${esc(t.team.shortName || t.team.name)}</span></div></td>
+      <td>${t.points}</td>
+      <td><b>${t.expPts.toFixed(1)}</b></td>
+      ${pctCell(t.top8)}${pctCell(t.top24)}${pctCell(t.out)}
+      <td>${distStrip(t.dist)}</td>
+    </tr>`).join("")}</tbody>
+  </table></div>`;
+}
+
+function simPicksHtml(picks, md) {
+  const list = picks.filter((g) => g.m.matchday === md).sort((a, b) => a.m.utcDate.localeCompare(b.m.utcDate));
+  const name = (t) => esc(t.shortName || t.name);
+  return list.map((g) => {
+    const seg = (cls, v, key) => `<span class="seg ${cls}${g.pick === key ? " picked" : ""}" style="flex:${Math.max(v * 100, 1)}">${v >= 0.12 ? pctText(v) : ""}</span>`;
+    const pickText = g.pick === "h" ? `${name(g.m.homeTeam)} win` : g.pick === "a" ? `${name(g.m.awayTeam)} win` : "Draw";
+    return `<div class="pick-row">
+      <div class="pick-teams">
+        <span class="side home ${g.pick === "h" ? "fav" : ""}">${name(g.m.homeTeam)}${crest(g.m.homeTeam.crest)}</span>
+        <span class="vs">–</span>
+        <span class="side away ${g.pick === "a" ? "fav" : ""}">${crest(g.m.awayTeam.crest)}${name(g.m.awayTeam)}</span>
+      </div>
+      <div class="pvp-bar">${seg("home-win", g.o.h, "h")}${seg("draw", g.o.d, "d")}${seg("away-win", g.o.a, "a")}</div>
+      <div class="pick-label">Most likely: <b>${pickText}</b> · ${shortDate(g.m.utcDate)}</div>
+    </div>`;
+  }).join("");
+}
+
+function simFinalHtml(final) {
+  return `<table class="mini sim-final">
+    <thead><tr><th>#</th><th class="team">Team</th><th>Now</th><th>Final</th></tr></thead>
+    <tbody>${final.map((t, i) => `<tr class="${zone(i + 1)}${i === 7 || i === 23 ? " cut" : ""}">
+      <td class="pos">${i + 1}</td>
+      <td class="team"><div class="team-cell">${crest(t.team.crest)}<span>${esc(t.team.shortName || t.team.name)}</span></div></td>
+      <td>${t.now}</td><td><b>${t.points}</b></td>
+    </tr>`).join("")}</tbody>
+  </table>`;
+}
+
+async function loadSim() {
+  if (simLoaded) return;
+  simLoaded = true;
+  const box = $("#sim");
+  try {
+    const current = seasonIndex.find((x) => x.current);
+    const pots = current && allPots[current.id];
+    if (!current || !pots) throw new Error("Simulation needs the current season and its draw pots.");
+    const [standings, matches] = await fetchSeason(current.id);
+    const league = (matches.matches || []).filter((m) => m.stage === "LEAGUE_STAGE");
+    if (league.length && league.every((m) => m.status === "FINISHED")) {
+      box.innerHTML = `<div class="card empty">The league phase of ${esc(current.label)} is finished, so there is nothing left to simulate.</div>`;
+      return;
+    }
+    const past = [];
+    for (const meta of seasonIndex) {
+      if (meta.current || !allPots[meta.id]) continue;
+      const [, m] = await fetchSeason(meta.id);
+      past.push({ matches: m.matches || [], pots: allPots[meta.id] });
+    }
+    if (!past.length) throw new Error("No past seasons to learn from.");
+    const odds = buildOddsModel(past);
+    const potOf = potIndex(pots);
+    const sim = simulateSeason(standings.table, league, potOf, odds, { seed: simSeed(standings.updated) });
+    const { picks, final } = mostLikelyTable(standings.table, sim.games);
+    const mds = [...new Set(picks.map((g) => g.m.matchday))].sort((a, b) => a - b);
+
+    box.innerHTML = `
+      <div class="card stat-card wide">
+        <h2>Simulated chances · ${esc(current.label)}</h2>
+        <p class="hint">The ${sim.remaining} remaining league-phase matches played ${SIM_RUNS.toLocaleString()} times, starting from the current table.
+          Updated after every matchday. The strip shows how often each team ended in each position (brighter = more often).</p>
+        ${simChancesHtml(sim)}
+      </div>
+      <div class="card stat-card">
+        <h2>Most likely results</h2>
+        <p class="hint">Chance of a home win, draw or away win for every remaining match.</p>
+        ${mds.length ? `<div class="seg-buttons" role="group" aria-label="Matchday">${mds.map((md, i) =>
+          `<button type="button" data-simmd="${md}" class="${i === 0 ? "active" : ""}">MD ${md}</button>`).join("")}</div>` : ""}
+        <div id="sim-picks">${mds.length ? simPicksHtml(picks, mds[0]) : `<p class="empty-note">No matches left.</p>`}</div>
+      </div>
+      <div class="card stat-card">
+        <h2>Final table if every match goes the most likely way</h2>
+        <p class="hint">One possible outcome: each remaining match ends in its most likely result. Draws are rarely the single most
+          likely result, so this table has fewer draws than reality; the chances above are the better guide.</p>
+        ${simFinalHtml(final)}
+      </div>`;
+
+    box.querySelectorAll("[data-simmd]").forEach((btn) => btn.addEventListener("click", () => {
+      box.querySelectorAll("[data-simmd]").forEach((b) => b.classList.toggle("active", b === btn));
+      $("#sim-picks").innerHTML = simPicksHtml(picks, Number(btn.dataset.simmd));
+    }));
+  } catch (err) {
+    console.error(err);
+    simLoaded = false;
+    box.innerHTML = `<div class="card empty">The simulation is not available right now.</div>`;
+  }
 }
 
 /* ---------- Statistics ---------- */
@@ -1058,7 +1297,7 @@ async function loadStats() {
     seasonIndex = index?.seasons || [];
     const id = seasonIndex.length ? setupSeasonPicker(seasonIndex) : null;
     const startView = location.hash.slice(1);
-    if (startView === "matches" || startView === "stats") showView(startView);
+    if (["matches", "stats", "sim"].includes(startView)) showView(startView);
     await loadSeason(id);
   } catch (err) {
     showError(err);

@@ -26,6 +26,7 @@
         <button role="tab" class="tab active" data-view="table" aria-selected="true">Table</button>
         <button role="tab" class="tab" data-view="matches" aria-selected="false">Matches</button>
         <button role="tab" class="tab" data-view="stats" aria-selected="false">Statistics</button>
+        <button role="tab" class="tab" data-view="sim" aria-selected="false">Simulation</button>
       </nav>
     </div>
   </header>
@@ -83,6 +84,10 @@
       </div>
       <div id="match-list" class="match-list"></div>
     </section>
+    <section id="view-sim" class="view" hidden>
+      <div id="sim" class="stats-grid"><div class="card empty">Running the simulation…</div></div>
+    </section>
+
     <section id="view-stats" class="view" hidden>
       <div id="stats" class="stats-grid"><div class="card empty">Loading…</div></div>
     </section>

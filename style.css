@@ -147,6 +147,8 @@ td.gd-neg { color: var(--loss); }
 .foot a { color: inherit; }
 
 @media (max-width: 600px) {
+  .tabs { overflow-x: auto; scrollbar-width: none; }
+  .tab { padding: 12px 10px; font-size: 14px; white-space: nowrap; }
   .hide-sm { display: none; }
   .standings { font-size: 13px; }
   .team-cell { min-width: 0; }
@@ -213,7 +215,38 @@ td.gd-neg { color: var(--loss); }
 .standings.no-pots .opp-cell { display: none; }
 
 /* Statistics */
-body[data-view="stats"] .season-select { visibility: hidden; }
+body[data-view="stats"] .season-select,
+body[data-view="sim"] .season-select { visibility: hidden; }
+
+/* Simulation */
+.sim-table { min-width: 680px; }
+.sim-table td { padding: 7px 6px; }
+.sim-table .rank { color: var(--muted); width: 28px; }
+.sim-pct { font-weight: 700; font-variant-numeric: tabular-nums; }
+.dist-head { text-align: left !important; }
+.dist { display: flex; gap: 1px; height: 16px; min-width: 180px; }
+.dist span { flex: 1; border-radius: 1px; }
+.dist .z1 { background: var(--win); }
+.dist .z2 { background: var(--draw-cell); }
+.dist .z3 { background: var(--loss); }
+.pick-row { padding: 10px 0; border-bottom: 1px solid var(--line); }
+.pick-row:last-child { border-bottom: 0; }
+.pick-teams { display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px; align-items: center; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+.pick-teams .side { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--muted); }
+.pick-teams .side.home { justify-content: flex-end; }
+.pick-teams .side.fav { color: var(--text); }
+.pick-teams .crest { width: 18px; height: 18px; }
+.pick-teams .vs { color: var(--muted); }
+.seg.picked { outline: 2px solid var(--text); outline-offset: -2px; }
+.pick-label { margin-top: 5px; font-size: 12px; color: var(--muted); text-align: center; }
+.pick-label b { color: var(--text); }
+.sim-final td { padding: 6px; }
+.sim-final .pos { position: relative; width: 36px; font-weight: 600; }
+.sim-final td.pos::before {
+  content: ""; position: absolute; left: 0; top: 5px; bottom: 5px;
+  width: 3px; border-radius: 0 3px 3px 0; background: var(--zone, transparent);
+}
+.sim-final tr.cut td { border-bottom: 2px dashed var(--line); }
 .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr)); gap: 16px; }
 .stat-card { padding: 18px 20px; }
 .stat-card.wide { grid-column: 1 / -1; }
