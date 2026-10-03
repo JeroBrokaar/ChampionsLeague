@@ -32,15 +32,6 @@ jobs:
         env:
           FOOTBALL_DATA_TOKEN: ${{ secrets.FOOTBALL_DATA_TOKEN }}
 
-      # Temporary: check Europa League access on API-Football (manual runs and pushes only,
-      # to stay well within the free plan's 100 requests per day).
-      - name: Probe API-Football (Europa League)
-        if: github.event_name != 'schedule'
-        continue-on-error: true
-        run: node scripts/probe-api-football.mjs
-        env:
-          API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
-
       - name: Assemble site
         run: |
           mkdir _site
