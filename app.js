@@ -110,10 +110,46 @@ function clinchStatus(table) {
 
 const statusBadge = (s) => (STATUS[s] ? `<span class="status-badge ${STATUS[s].cls}" title="${STATUS[s].title}">${STATUS[s].label}</span>` : "");
 
-function renderTable(rows, grid, status) {
+const RESULT = {
+  LEAGUE: { label: "League phase", cls: "" },
+  PLAYOFFS: { label: "Play-offs", cls: "" },
+  LAST_16: { label: "Round of 16", cls: "" },
+  QUARTER_FINALS: { label: "Quarter-finals", cls: "" },
+  SEMI_FINALS: { label: "Semi-finals", cls: "res-strong" },
+  FINAL: { label: "Final", cls: "res-final" },
+  WINNER: { label: "Winner", cls: "res-winner" },
+};
+
+// Furthest stage each team reached; only once the final has been played.
+function finalResults(matches) {
+  const final = matches.find((m) => m.stage === "FINAL" && m.status === "FINISHED");
+  if (!final) return null;
+  const order = ["PLAYOFFS", "LAST_16", "QUARTER_FINALS", "SEMI_FINALS", "FINAL"];
+  const best = new Map();
+  for (const m of matches) {
+    const rank = order.indexOf(m.stage);
+    if (rank === -1) continue;
+    for (const id of [m.homeTeam?.id, m.awayTeam?.id]) {
+      if (id && rank > (best.get(id) ?? -1)) best.set(id, rank);
+    }
+  }
+  const out = new Map([...best].map(([id, rank]) => [id, order[rank]]));
+  const w = final.score.winner;
+  const winnerId = w === "HOME_TEAM" ? final.homeTeam.id : w === "AWAY_TEAM" ? final.awayTeam.id : null;
+  if (winnerId) out.set(winnerId, "WINNER");
+  return out;
+}
+
+function resultCell(results, id) {
+  if (!results) return "";
+  const r = RESULT[results.get(id) || "LEAGUE"];
+  return `<td class="result-col"><span class="result ${r.cls}">${esc(r.label)}</span></td>`;
+}
+
+function renderTable(rows, grid, status, results) {
   const body = $("#table-body");
   if (!rows.length) {
-    body.innerHTML = `<tr><td colspan="18" class="empty">No standings yet.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="19" class="empty">No standings yet.</td></tr>`;
     return;
   }
   body.innerHTML = rows.map((r, i) => {
@@ -134,6 +170,7 @@ function renderTable(rows, grid, status) {
       <td class="hide-sm">${r.goalsAgainst}</td>
       <td class="${gdClass}">${gd}</td>
       <td class="pts">${r.points}</td>
+      ${resultCell(results, r.team.id)}
     </tr>`;
   }).join("");
 }
@@ -261,7 +298,9 @@ async function loadSeason(id) {
   const pots = allPots[String(s)];
   $(".standings").classList.toggle("no-pots", !pots);
   $("#season").textContent = `Season ${s}/${String(s + 1).slice(-2)} · League phase`;
-  renderTable(standings.table || [], buildOpponentGrid(matches.matches || [], pots || {}), clinchStatus(standings.table || []));
+  const results = finalResults(matches.matches || []);
+  $(".standings").classList.toggle("no-result", !results);
+  renderTable(standings.table || [], buildOpponentGrid(matches.matches || [], pots || {}), clinchStatus(standings.table || []), results);
   setupMatches(matches.matches || []);
   $("#updated").textContent = standings.updated
     ? `Updated ${new Date(standings.updated).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}`
@@ -289,7 +328,7 @@ function setupSeasonPicker(seasons) {
 function showError(err) {
   console.error(err);
   $("#table-body").innerHTML =
-    `<tr><td colspan="18" class="empty">No data yet. It appears after the GitHub Action has run once.</td></tr>`;
+    `<tr><td colspan="19" class="empty">No data yet. It appears after the GitHub Action has run once.</td></tr>`;
   $("#match-list").innerHTML = `<div class="card empty">No data yet.</div>`;
 }
 
