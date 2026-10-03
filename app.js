@@ -206,7 +206,9 @@ function buildModel(pastSeasons) {
     const league = matches.filter((m) => m.stage === "LEAGUE_STAGE" && m.status === "FINISHED");
     table.forEach((r, i) => {
       const pos = i + 1;
-      for (const e of allTeamEvents(r.team.id, league, potOf)) {
+      const events = allTeamEvents(r.team.id, league, potOf);
+      if (potOf[r.team.id]) events.push(`pot:${potOf[r.team.id]}`);
+      for (const e of events) {
         const c = (counts[e] ??= { n: 0, top8: 0, top24: 0 });
         c.n++;
         if (pos <= 8) c.top8++;
@@ -221,16 +223,55 @@ function buildModel(pastSeasons) {
   return { counts, prob, seasons: pastSeasons.length };
 }
 
+// Raw estimate: average of the team's pot history and its results so far.
 function predictTeam(model, teamId, finishedLeague, potOf) {
   const events = teamEvents(teamId, finishedLeague, potOf);
+  if (potOf[teamId]) events.unshift(`pot:${potOf[teamId]}`);
   if (!events.length) return { top8: BASE.top8, top24: BASE.top24, parts: [] };
   const parts = events.map((e) => ({ e, top8: model.prob(e, "top8"), top24: model.prob(e, "top24") }));
   const avg = (key) => parts.reduce((s, x) => s + x[key].p, 0) / parts.length;
   return { top8: avg("top8"), top24: avg("top24"), parts };
 }
 
+// Scale estimates so they add up to the number of places (8 or 24). Teams already
+// decided stay at 0 or 1; the rest get one common shift in log-odds, which keeps
+// every value between 0 and 1 and preserves the order.
+function normalize(raw, fixed, places) {
+  const out = new Map(fixed);
+  const open = [...raw].filter(([id]) => !fixed.has(id));
+  const target = places - [...fixed.values()].reduce((s, v) => s + v, 0);
+  if (!open.length) return out;
+  if (target <= 0) { open.forEach(([id]) => out.set(id, 0)); return out; }
+  if (target >= open.length) { open.forEach(([id]) => out.set(id, 1)); return out; }
+  const clamp = (p) => Math.min(Math.max(p, 1e-4), 1 - 1e-4);
+  const logit = open.map(([id, p]) => [id, Math.log(clamp(p) / (1 - clamp(p)))]);
+  const total = (c) => logit.reduce((s, [, l]) => s + 1 / (1 + Math.exp(-(l + c))), 0);
+  let lo = -30, hi = 30;
+  for (let i = 0; i < 60; i++) { const mid = (lo + hi) / 2; if (total(mid) < target) lo = mid; else hi = mid; }
+  const c = (lo + hi) / 2;
+  logit.forEach(([id, l]) => out.set(id, 1 / (1 + Math.exp(-(l + c)))));
+  return out;
+}
+
+function predictAll(model, table, finishedLeague, potOf, status) {
+  const raw = new Map(table.map((r) => [r.team.id, predictTeam(model, r.team.id, finishedLeague, potOf)]));
+  const fixed8 = new Map(), fixed24 = new Map();
+  for (const r of table) {
+    const s = status?.get(r.team.id);
+    if (s === "r16") { fixed8.set(r.team.id, 1); fixed24.set(r.team.id, 1); }
+    else if (s === "top24") fixed24.set(r.team.id, 1);
+    else if (s === "po") { fixed8.set(r.team.id, 0); fixed24.set(r.team.id, 1); }
+    else if (s === "no-top8") fixed8.set(r.team.id, 0);
+    else if (s === "out") { fixed8.set(r.team.id, 0); fixed24.set(r.team.id, 0); }
+  }
+  const top8 = normalize(new Map([...raw].map(([id, p]) => [id, p.top8])), fixed8, 8);
+  const top24 = normalize(new Map([...raw].map(([id, p]) => [id, p.top24])), fixed24, 24);
+  return new Map([...raw].map(([id, p]) => [id, { ...p, raw8: p.top8, raw24: p.top24, top8: top8.get(id), top24: top24.get(id) }]));
+}
+
 function eventLabel(e) {
   const [kind, pot, a, b] = e.split(":");
+  if (kind === "pot") return `History of Pot ${pot} teams`;
   if (kind === "p") return `${a} pt${a === "1" ? "" : "s"} from both Pot ${pot} games`;
   const res = { W: "Win", D: "Draw", L: "Loss" }[b];
   return `${res} ${a === "H" ? "at home vs" : "away vs"} Pot ${pot}`;
@@ -251,19 +292,12 @@ async function modelFor(excludeId) {
 
 const pctText = (p) => `${Math.round(p * 100)}%`;
 
-function predCells(pred, status) {
+function predCells(pred) {
   if (!pred) return "";
-  // Mathematical certainties override the estimate.
-  let t8 = pred.top8, t24 = pred.top24;
-  if (status === "r16") { t8 = 1; t24 = 1; }
-  else if (status === "top24") t24 = 1;
-  else if (status === "po") { t8 = 0; t24 = 1; }
-  else if (status === "no-top8") t8 = 0;
-  else if (status === "out") { t8 = 0; t24 = 0; }
-  const lines = pred.parts.length
-    ? pred.parts.map((x) => `${eventLabel(x.e)}: top 8 ${pctText(x.top8.p)}, top 24 ${pctText(x.top24.p)} (${x.top8.n}× before)`).join("\n")
-    : "No matches played yet: overall average.";
-  const title = `Average of:\n${lines}`;
+  const t8 = pred.top8, t24 = pred.top24;
+  const lines = pred.parts.map((x) => `• ${eventLabel(x.e)}: top 8 ${pctText(x.top8.p)}, top 24 ${pctText(x.top24.p)} (${x.top8.n}× before)`).join("\n");
+  const title = `Average of:\n${lines}\n= top 8 ${pctText(pred.raw8)}, top 24 ${pctText(pred.raw24)}\n` +
+    `Scaled so all teams add up to 8 and 24 places: top 8 ${pctText(t8)}, top 24 ${pctText(t24)}`;
   const cell = (p, first) => `<td class="pred-col${first ? " pred-first" : ""}" title="${esc(title)}">
     <span class="pred-num">${pctText(p)}</span><span class="pred-bar"><span style="width:${p * 100}%"></span></span></td>`;
   return cell(t8, true) + cell(t24, false);
@@ -293,7 +327,7 @@ function renderTable(rows, grid, status, results, preds) {
       <td class="hide-sm">${r.goalsAgainst}</td>
       <td class="${gdClass}">${gd}</td>
       <td class="pts">${r.points}</td>
-      ${preds ? predCells(preds.get(r.team.id), status?.get(r.team.id)) : ""}
+      ${preds ? predCells(preds.get(r.team.id)) : ""}
       ${resultCell(results, r.team.id)}
     </tr>`;
   }).join("");
@@ -432,7 +466,7 @@ async function loadSeason(id) {
     if (model) {
       const potOf = potIndex(pots);
       const finished = (matches.matches || []).filter((m) => m.stage === "LEAGUE_STAGE" && m.status === "FINISHED");
-      preds = new Map(table.map((r) => [r.team.id, predictTeam(model, r.team.id, finished, potOf)]));
+      preds = predictAll(model, table, finished, potOf, status);
     }
   }
   $(".standings").classList.toggle("no-result", !results);
