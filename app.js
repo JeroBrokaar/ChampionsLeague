@@ -150,7 +150,7 @@ function resultCell(results, id) {
 
 // Learns from finished past seasons: for each "event" (e.g. home win vs Pot 1, or 6 points
 // from both Pot 4 games), how often teams with that event finished top 8 / top 24.
-// A team's estimate is the average over its own events so far.
+// A team's estimate starts from its pot history and adds the effect of each of its results.
 const PRIOR_WEIGHT = 2; // pulls small samples toward the overall rate
 const BASE = { top8: 8 / 36, top24: 24 / 36 };
 
@@ -223,14 +223,22 @@ function buildModel(pastSeasons) {
   return { counts, prob, seasons: pastSeasons.length };
 }
 
-// Raw estimate: average of the team's pot history and its results so far.
+const logit = (p) => { const c = Math.min(Math.max(p, 1e-4), 1 - 1e-4); return Math.log(c / (1 - c)); };
+const sigmoid = (x) => 1 / (1 + Math.exp(-x));
+
+// Raw estimate: start from the pot's history, then let every result push the chance
+// up or down by how much it differs from the overall rate (effects add up in log-odds).
+// Backtested on 2024/25 and 2025/26, this beat averaging the percentages.
 function predictTeam(model, teamId, finishedLeague, potOf) {
   const events = teamEvents(teamId, finishedLeague, potOf);
-  if (potOf[teamId]) events.unshift(`pot:${potOf[teamId]}`);
-  if (!events.length) return { top8: BASE.top8, top24: BASE.top24, parts: [] };
-  const parts = events.map((e) => ({ e, top8: model.prob(e, "top8"), top24: model.prob(e, "top24") }));
-  const avg = (key) => parts.reduce((s, x) => s + x[key].p, 0) / parts.length;
-  return { top8: avg("top8"), top24: avg("top24"), parts };
+  const potEvent = potOf[teamId] ? `pot:${potOf[teamId]}` : null;
+  const parts = [potEvent, ...events].filter(Boolean).map((e) => ({ e, top8: model.prob(e, "top8"), top24: model.prob(e, "top24") }));
+  const combine = (key) => {
+    let x = logit(potEvent ? model.prob(potEvent, key).p : BASE[key]);
+    for (const e of events) x += logit(model.prob(e, key).p) - logit(BASE[key]);
+    return sigmoid(x);
+  };
+  return { top8: combine("top8"), top24: combine("top24"), parts };
 }
 
 // Scale estimates so they add up to the number of places (8 or 24). Teams already
@@ -295,8 +303,13 @@ const pctText = (p) => `${Math.round(p * 100)}%`;
 function predCells(pred) {
   if (!pred) return "";
   const t8 = pred.top8, t24 = pred.top24;
-  const lines = pred.parts.map((x) => `• ${eventLabel(x.e)}: top 8 ${pctText(x.top8.p)}, top 24 ${pctText(x.top24.p)} (${x.top8.n}× before)`).join("\n");
-  const title = `Average of:\n${lines}\n= top 8 ${pctText(pred.raw8)}, top 24 ${pctText(pred.raw24)}\n` +
+  const arrow = (p, key) => (p > BASE[key] + 0.02 ? "↑" : p < BASE[key] - 0.02 ? "↓" : "→");
+  const lines = pred.parts.map((x, i) => {
+    const what = `top 8 ${pctText(x.top8.p)}${i ? ` ${arrow(x.top8.p, "top8")}` : ""}, top 24 ${pctText(x.top24.p)}${i ? ` ${arrow(x.top24.p, "top24")}` : ""}`;
+    return i === 0 ? `Start: ${eventLabel(x.e)}: ${what}` : `• ${eventLabel(x.e)}: ${what} (${x.top8.n}× before)`;
+  }).join("\n");
+  const title = `${lines}\n(↑/↓: past teams with this result did better/worse than the average of ` +
+    `${pctText(BASE.top8)} / ${pctText(BASE.top24)})\nCombined: top 8 ${pctText(pred.raw8)}, top 24 ${pctText(pred.raw24)}\n` +
     `Scaled so all teams add up to 8 and 24 places: top 8 ${pctText(t8)}, top 24 ${pctText(t24)}`;
   const cell = (p, first) => `<td class="pred-col${first ? " pred-first" : ""}" title="${esc(title)}">
     <span class="pred-num">${pctText(p)}</span><span class="pred-bar"><span style="width:${p * 100}%"></span></span></td>`;
