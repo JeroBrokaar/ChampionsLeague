@@ -1,34 +1,21 @@
 :root {
-  --bg: #f3f5fb;
-  --surface: #ffffff;
-  --text: #0e1630;
-  --muted: #5d6789;
-  --line: #e3e7f2;
-  --hero-1: #0b1d5c;
-  --hero-2: #1b3fa8;
+  color-scheme: dark;
+  --bg: #0b0b0c;
+  --surface: #151517;
+  --text: #ececee;
+  --muted: #8b8b92;
+  --line: #26262a;
+  --hero-1: #050505;
+  --hero-2: #2a2a2e;
   --accent: #f5c518;
-  --r16: #1f9d55;
-  --po: #2f6fe0;
-  --out: #c4cad9;
-  --win: #1f9d55;
-  --draw: #9aa3bb;
-  --loss: #d64545;
-  --draw-cell: #f2c230;
-  --row-hover: #f6f8fd;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0a0f22;
-    --surface: #121a35;
-    --text: #e8ecf8;
-    --muted: #96a0c0;
-    --line: #232d50;
-    --hero-1: #060c24;
-    --hero-2: #12276e;
-    --out: #3a4468;
-    --row-hover: #18224a;
-  }
+  --r16: #e4e4e7;
+  --po: #7c7c84;
+  --out: #36363b;
+  --win: #22c55e;
+  --draw: #71717a;
+  --loss: #ef4444;
+  --draw-cell: #facc15;
+  --row-hover: #1d1d20;
 }
 
 * { box-sizing: border-box; }
@@ -56,11 +43,11 @@ body {
   filter: drop-shadow(0 0 10px rgba(245, 197, 24, .45));
 }
 h1 { margin: 0; font-size: clamp(22px, 5vw, 32px); font-weight: 800; letter-spacing: -.02em; }
-.sub { margin: 2px 0 0; color: #b8c4ec; font-size: 14px; }
+.sub { margin: 2px 0 0; color: #a1a1aa; font-size: 14px; }
 
 .tabs { display: flex; gap: 4px; margin-top: 22px; }
 .tab {
-  background: none; border: 0; color: #b8c4ec; cursor: pointer;
+  background: none; border: 0; color: #a1a1aa; cursor: pointer;
   font: inherit; font-weight: 600; font-size: 15px;
   padding: 12px 16px; border-bottom: 3px solid transparent;
 }
@@ -181,9 +168,9 @@ td.gd-neg { color: var(--loss); }
   font-size: 11px; font-weight: 700; line-height: 1; padding: 3px 6px; border-radius: 4px;
   color: #fff; white-space: nowrap;
 }
-.res.win { background: var(--win); }
-.res.draw { background: var(--draw-cell); color: #3a2f00; }
-.res.loss { background: var(--loss); }
+.res.win { background: var(--win); color: #04130a; }
+.res.draw { background: var(--draw-cell); color: #1a1500; }
+.res.loss { background: var(--loss); color: #1a0505; }
 .res.live { background: var(--loss); animation: pulse 1.6s ease-in-out infinite; }
 .res.up { color: var(--muted); background: none; font-weight: 500; padding: 3px 0; }
 @keyframes pulse { 50% { opacity: .55; } }
