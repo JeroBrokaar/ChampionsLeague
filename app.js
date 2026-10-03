@@ -31,6 +31,8 @@ function crest(url) {
 const ABBR = { 5: "BAY", 81: "BAR", 5721: "BOD" };
 const abbr = (t) => ABBR[t.id] || t.tla || (t.shortName || t.name).slice(0, 3).toUpperCase();
 const SLOTS = ["1H", "1A", "2H", "2A", "3H", "3A", "4H", "4A"];
+const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+const shortDate = (iso) => { const d = new Date(iso); return `${d.getDate()} ${MONTHS[d.getMonth()]}`; };
 
 // teamId -> { "1H": match, "1A": match, ... } for the league phase.
 function buildOpponentGrid(matches, pots) {
@@ -52,12 +54,11 @@ function opponentCell(m, slot) {
   const opp = home ? m.awayTeam : m.homeTeam;
   const ft = m.score?.fullTime ?? {};
   const live = LIVE.has(m.status);
-  const date = new Date(m.utcDate).toLocaleDateString([], { day: "numeric", month: "short" });
+  const date = shortDate(m.utcDate);
   let res, label;
   if (m.status === "FINISHED" || live) {
-    const mine = home ? ft.home : ft.away;
-    const theirs = home ? ft.away : ft.home;
-    const outcome = live ? "live" : mine > theirs ? "W" : mine < theirs ? "L" : "D";
+    // Colour by the home team's result: home win / draw / away win.
+    const outcome = live ? "live" : ft.home > ft.away ? "home-win" : ft.home < ft.away ? "away-win" : "draw";
     label = `${ft.home ?? 0}–${ft.away ?? 0}`;
     res = `<span class="res ${outcome}">${label}</span>`;
   } else {
