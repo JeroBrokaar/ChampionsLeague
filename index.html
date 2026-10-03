@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Champions League Standings</title>
+  <meta name="description" content="Live league-phase table, results and fixtures of the Champions League.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="hero">
+    <div class="wrap">
+      <div class="brand">
+        <span class="star" aria-hidden="true">★</span>
+        <div>
+          <h1>Champions League</h1>
+          <p class="sub" id="season">Standings &amp; fixtures</p>
+        </div>
+      </div>
+      <nav class="tabs" role="tablist">
+        <button role="tab" class="tab active" data-view="table" aria-selected="true">Table</button>
+        <button role="tab" class="tab" data-view="matches" aria-selected="false">Matches</button>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section id="view-table" class="view">
+      <div class="card">
+        <div class="table-scroll">
+          <table class="standings">
+            <thead>
+              <tr>
+                <th class="pos">#</th>
+                <th class="team">Team</th>
+                <th title="Played">P</th>
+                <th title="Won">W</th>
+                <th title="Drawn">D</th>
+                <th title="Lost">L</th>
+                <th class="hide-sm" title="Goals for">GF</th>
+                <th class="hide-sm" title="Goals against">GA</th>
+                <th title="Goal difference">GD</th>
+                <th class="pts" title="Points">Pts</th>
+                <th class="hide-sm form-col">Form</th>
+              </tr>
+            </thead>
+            <tbody id="table-body">
+              <tr><td colspan="11" class="empty">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <ul class="legend">
+        <li><span class="dot z-r16"></span>1–8 · Round of 16</li>
+        <li><span class="dot z-po"></span>9–24 · Knockout play-offs</li>
+        <li><span class="dot z-out"></span>25–36 · Eliminated</li>
+      </ul>
+    </section>
+
+    <section id="view-matches" class="view" hidden>
+      <div class="matchday-bar">
+        <button class="md-nav" id="md-prev" aria-label="Previous round">‹</button>
+        <select id="md-select" aria-label="Round"></select>
+        <button class="md-nav" id="md-next" aria-label="Next round">›</button>
+      </div>
+      <div id="match-list" class="match-list"></div>
+    </section>
+  </main>
+
+  <footer class="wrap foot">
+    <span id="updated"></span>
+    <span>Data: <a href="https://www.football-data.org" target="_blank" rel="noopener">football-data.org</a></span>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
