@@ -57,8 +57,10 @@ function opponentCell(m, slot) {
   const date = shortDate(m.utcDate);
   let res, label;
   if (m.status === "FINISHED" || live) {
-    // Colour by the home team's result: home win / draw / away win.
-    const outcome = live ? "live" : ft.home > ft.away ? "home-win" : ft.home < ft.away ? "away-win" : "draw";
+    // Colour from the perspective of this row's team.
+    const mine = home ? ft.home : ft.away;
+    const theirs = home ? ft.away : ft.home;
+    const outcome = live ? "live" : mine > theirs ? "win" : mine < theirs ? "loss" : "draw";
     label = `${ft.home ?? 0}–${ft.away ?? 0}`;
     res = `<span class="res ${outcome}">${label}</span>`;
   } else {

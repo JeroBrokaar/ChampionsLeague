@@ -181,9 +181,9 @@ td.gd-neg { color: var(--loss); }
   font-size: 11px; font-weight: 700; line-height: 1; padding: 3px 6px; border-radius: 4px;
   color: #fff; white-space: nowrap;
 }
-.res.home-win { background: var(--win); }
+.res.win { background: var(--win); }
 .res.draw { background: var(--draw-cell); color: #3a2f00; }
-.res.away-win { background: var(--loss); }
+.res.loss { background: var(--loss); }
 .res.live { background: var(--loss); animation: pulse 1.6s ease-in-out infinite; }
 .res.up { color: var(--muted); background: none; font-weight: 500; padding: 3px 0; }
 @keyframes pulse { 50% { opacity: .55; } }
