@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
   schedule:
     - cron: "17 */3 * * *"          # every 3 hours
-    - cron: "*/30 16-23 * * 2,3"    # every 30 min on Tue/Wed evenings (UTC) during matches
+    - cron: "*/30 16-23 * * 2,3,4"  # every 30 min on Tue/Wed/Thu evenings (UTC) during matches
 
 permissions:
   contents: read

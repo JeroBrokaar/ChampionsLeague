@@ -17,7 +17,7 @@ The site will be live at `https://<your-username>.github.io/<repo-name>/`.
 ## How it works
 
 - `scripts/fetch-data.mjs` downloads standings and matches, writing `data/standings.json` and `data/matches.json`.
-- `.github/workflows/deploy.yml` runs that script every 3 hours (every 30 minutes on Tuesday/Wednesday evenings), then publishes the site.
+- `.github/workflows/deploy.yml` runs that script every 3 hours (every 30 minutes on Tuesday-Thursday evenings), then publishes the site.
 - `index.html`, `style.css`, `app.js` are the site itself: plain HTML/CSS/JS, no build step.
 
 ## Run locally
