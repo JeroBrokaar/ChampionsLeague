@@ -324,7 +324,109 @@ function seasonStats(meta, standings, matches) {
     potVsPot: pots ? potVsPot(finished, pots) : null,
     draws: drawDifficulty(table, league, pots),
     table, status: clinchStatus(table),
+    knockout: complete ? knockoutProgress(table, matches) : null,
   };
+}
+
+const KO_STAGES = [
+  ["PLAYOFFS", "Play-offs"],
+  ["LAST_16", "Round of 16"],
+  ["QUARTER_FINALS", "Quarter-finals"],
+  ["SEMI_FINALS", "Semi-finals"],
+  ["FINAL", "Final"],
+];
+const KO_GROUPS = [["1–8", 1, 8], ["9–16", 9, 16], ["17–24", 17, 24]];
+
+// Which teams from each league-phase group reached each knockout stage (and won it all).
+function knockoutProgress(table, matches) {
+  const ko = matches.filter((m) => m.stage !== "LEAGUE_STAGE");
+  if (!ko.length) return null;
+  const posOf = new Map(table.map((r, i) => [r.team.id, i + 1]));
+  const nameOf = new Map(table.map((r) => [r.team.id, r.team.shortName || r.team.name]));
+  const reached = {};
+  for (const [stage] of KO_STAGES) {
+    reached[stage] = new Set();
+    for (const m of ko.filter((x) => x.stage === stage)) [m.homeTeam?.id, m.awayTeam?.id].forEach((id) => id && reached[stage].add(id));
+  }
+  const final = ko.find((m) => m.stage === "FINAL" && m.status === "FINISHED");
+  const winnerId = final ? (final.score.winner === "HOME_TEAM" ? final.homeTeam.id : final.score.winner === "AWAY_TEAM" ? final.awayTeam.id : null) : null;
+  const started = KO_STAGES.filter(([stage]) => reached[stage].size).map(([stage]) => stage);
+  return KO_GROUPS.map(([label, lo, hi]) => {
+    const ids = table.slice(lo - 1, hi).map((r) => r.team.id);
+    const cols = {};
+    for (const [stage] of KO_STAGES) {
+      // Top-8 teams skip the play-offs, so that column doesn't apply to them.
+      if (stage === "PLAYOFFS" && lo === 1) { cols[stage] = null; continue; }
+      cols[stage] = started.includes(stage) ? ids.filter((id) => reached[stage].has(id)).map((id) => nameOf.get(id)) : undefined;
+    }
+    cols.WINNER = winnerId ? (ids.includes(winnerId) ? [nameOf.get(winnerId)] : []) : undefined;
+    return { label, size: ids.length, cols, positions: ids.map((id) => posOf.get(id)) };
+  });
+}
+
+// Combine several seasons; team names get a season tag (e.g. "Arsenal 24/25") when combined.
+function sumKnockout(seasons) {
+  return KO_GROUPS.map((_, gi) => {
+    const rows = seasons.map((s) => s.knockout[gi]);
+    const cols = {};
+    for (const key of [...KO_STAGES.map(([st]) => st), "WINNER"]) {
+      const vals = rows.map((r) => r.cols[key]);
+      if (vals.some((v) => v === null)) cols[key] = null;
+      else if (vals.every((v) => v === undefined)) cols[key] = undefined;
+      else cols[key] = vals.flatMap((v, i) => (v || []).map((name) => (seasons.length > 1 ? `${name} ${seasons[i].meta.label.slice(2)}` : name)));
+    }
+    return { label: rows[0].label, size: rows.reduce((sum, r) => sum + r.size, 0), cols };
+  });
+}
+
+function knockoutTableHtml(groups) {
+  const keys = [...KO_STAGES, ["WINNER", "Winner"]];
+  const cell = (g, key) => {
+    const v = g.cols[key];
+    if (v === null) return `<td class="ko-cell na" title="Top-8 teams skip the play-offs">—</td>`;
+    if (v === undefined) return `<td class="ko-cell na" title="Not played yet">·</td>`;
+    const share = v.length / g.size;
+    return `<td class="ko-cell" title="${esc(v.join(", ") || "None")}">
+      <div class="ko-num"><b>${v.length}</b> / ${g.size}</div>
+      <div class="ko-bar"><span style="width:${share * 100}%"></span></div>
+    </td>`;
+  };
+  return `<table class="pvp ko">
+    <thead><tr><th class="corner">League position</th>${keys.map(([, label]) => `<th>${label}</th>`).join("")}</tr></thead>
+    <tbody>${groups.map((g) => `<tr><th>${g.label}</th>${keys.map(([key]) => cell(g, key)).join("")}</tr>`).join("")}</tbody>
+  </table>`;
+}
+
+function knockoutCard(stats) {
+  const withData = stats.filter((s) => s.knockout);
+  if (!withData.length) return "";
+  const options = withData.length > 1
+    ? [{ id: "all", label: "All seasons" }, ...withData.map((s) => ({ id: s.meta.id, label: s.meta.label }))]
+    : withData.map((s) => ({ id: s.meta.id, label: s.meta.label }));
+  return `<div class="card stat-card wide" id="ko-card">
+      <h2>What happened next</h2>
+      <p class="hint">How far teams got in the knockouts, by where they finished in the league phase.
+        Places 1–8 go straight to the Round of 16; 9–16 are seeded in the play-offs, 17–24 unseeded. Hover a cell to see the teams.</p>
+      <div class="seg-buttons" role="group" aria-label="Season">
+        ${options.map((o, i) => `<button type="button" data-ko="${o.id}" class="${i === 0 ? "active" : ""}">${esc(o.label)}</button>`).join("")}
+      </div>
+      <div class="pvp-scroll" id="ko-matrix">${knockoutHtmlFor(options[0].id, withData)}</div>
+    </div>`;
+}
+
+function knockoutHtmlFor(id, withData) {
+  const chosen = id === "all" ? withData : withData.filter((s) => s.meta.id === id);
+  return knockoutTableHtml(sumKnockout(chosen));
+}
+
+function wireKnockout(stats) {
+  const card = $("#ko-card");
+  if (!card) return;
+  const withData = stats.filter((s) => s.knockout);
+  card.querySelectorAll("[data-ko]").forEach((btn) => btn.addEventListener("click", () => {
+    card.querySelectorAll("[data-ko]").forEach((b) => b.classList.toggle("active", b === btn));
+    $("#ko-matrix").innerHTML = knockoutHtmlFor(btn.dataset.ko, withData);
+  }));
 }
 
 function throughOutCard(stats) {
@@ -695,6 +797,7 @@ function renderStats(stats) {
     ${cutoffChartsCard(stats)}
     ${potVsPotCard(stats)}
     ${drawsCard(stats)}
+    ${knockoutCard(stats)}
     <div class="card stat-card wide">
       <h2>Home wins, draws, away wins</h2>
       <p class="hint">Share of league-phase matches.</p>
@@ -730,6 +833,7 @@ async function loadStats() {
     wireChartHover($("#stats"));
     wirePotVsPot(stats);
     wireDraws(stats);
+    wireKnockout(stats);
   } catch (err) {
     console.error(err);
     statsLoaded = false;

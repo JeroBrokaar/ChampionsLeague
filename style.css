@@ -311,6 +311,15 @@ body[data-view="stats"] .season-select { visibility: hidden; }
 .status-team .crest { width: 18px; height: 18px; }
 .empty-note { color: var(--muted); font-size: 14px; margin: 0; }
 
+.ko { min-width: 640px; table-layout: fixed; }
+.ko thead th:first-child, .ko tbody th { width: 92px; }
+.ko-cell { text-align: center; background: var(--bg); border-radius: 8px; padding: 8px 10px; }
+.ko-cell.na { color: var(--muted); }
+.ko-num { font-size: 12px; color: var(--muted); }
+.ko-num b { font-size: 18px; font-weight: 800; color: var(--text); }
+.ko-bar { height: 6px; margin-top: 6px; background: var(--surface); border-radius: 3px; overflow: hidden; }
+.ko-bar span { display: block; height: 100%; background: var(--text); border-radius: 3px; }
+
 .pot-seasons { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); gap: 12px 28px; }
 .pot-season h3 { margin: 0 0 8px; font-size: 14px; font-weight: 700; }
 .pot-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line); }
