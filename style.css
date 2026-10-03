@@ -229,6 +229,31 @@ body[data-view="stats"] .season-select { visibility: hidden; }
 .seg.draw, .pchip.z2 { background: var(--draw-cell); color: #1a1500; }
 .seg.away-win, .pchip.z3 { background: var(--loss); color: #1a0505; }
 
+.chart-legend { margin: 0 0 10px; }
+.charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(400px, 100%), 1fr)); gap: 12px 28px; }
+.chart { margin: 0; }
+.chart figcaption { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+.chart-box { position: relative; }
+.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.chart .grid { stroke: var(--line); stroke-width: 1; }
+.chart .tick { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.chart .end-label { fill: var(--text); font-size: 11px; font-weight: 600; }
+.chart .crosshair { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; }
+.chart .hit { fill: transparent; cursor: crosshair; }
+.chart-tip {
+  position: absolute; top: 8px; pointer-events: none; z-index: 2;
+  background: #222226; border: 1px solid var(--line); border-radius: 8px;
+  padding: 8px 10px; font-size: 12px; min-width: 140px; box-shadow: 0 6px 20px rgba(0, 0, 0, .4);
+}
+.chart-tip strong { display: block; margin-bottom: 4px; }
+.chart-tip div { display: flex; align-items: center; gap: 6px; }
+.chart-tip i { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.chart-tip b { margin-left: auto; padding-left: 12px; font-variant-numeric: tabular-nums; }
+.chart-table { margin-top: 10px; }
+.chart-table summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+.chart-table .mini { margin-top: 8px; }
+.chart-table small { font-weight: 400; text-transform: none; }
+
 .pot-seasons { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); gap: 12px 28px; }
 .pot-season h3 { margin: 0 0 8px; font-size: 14px; font-weight: 700; }
 .pot-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line); }

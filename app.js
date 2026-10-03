@@ -284,18 +284,156 @@ function seasonStats(meta, standings, matches) {
   const potPositions = pots
     ? ["1", "2", "3", "4"].map((k) => (pots[k] || []).map((id) => posOf.get(id)).filter(Boolean).sort((a, b) => a.pos - b.pos))
     : null;
-  return { meta, complete, played: finished.length, home, draw, away, cutoff: table[23], potPositions };
+  return {
+    meta, complete, played: finished.length, home, draw, away,
+    cutoff8: table[7], cutoff24: table[23], potPositions, byMatchday: cutoffByMatchday(league),
+  };
+}
+
+// Points of the 8th and 24th team after each fully played matchday.
+function cutoffByMatchday(league) {
+  const points = new Map();
+  const add = (id, p) => points.set(id, (points.get(id) || 0) + p);
+  const out = [];
+  const matchdays = [...new Set(league.map((m) => m.matchday))].sort((a, b) => a - b);
+  for (const md of matchdays) {
+    const games = league.filter((m) => m.matchday === md);
+    if (!games.every((m) => m.status === "FINISHED")) break;
+    for (const m of games) {
+      const { home: h, away: a } = m.score.fullTime;
+      add(m.homeTeam.id, h > a ? 3 : h === a ? 1 : 0);
+      add(m.awayTeam.id, a > h ? 3 : h === a ? 1 : 0);
+    }
+    const sorted = [...points.values()].sort((x, y) => y - x);
+    out.push({ md, p8: sorted[7] ?? 0, p24: sorted[23] ?? 0 });
+  }
+  return out;
+}
+
+// Season line colours (validated for the dark surface): current, previous, the one before.
+const SEASON_COLORS = ["#3987e5", "#d95926", "#199e70"];
+
+function lineChart(title, key, series, yMax) {
+  const W = 520, H = 250, L = 34, R = 74, T = 14, B = 30;
+  const x = (md) => L + ((md - 1) / 7) * (W - L - R);
+  const y = (v) => T + (1 - v / yMax) * (H - T - B);
+  const step = yMax > 12 ? 4 : 2;
+  let grid = "";
+  for (let v = 0; v <= yMax; v += step) {
+    grid += `<line class="grid" x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}"/><text class="tick" x="${L - 8}" y="${y(v) + 4}" text-anchor="end">${v}</text>`;
+  }
+  for (let md = 1; md <= 8; md++) grid += `<text class="tick" x="${x(md)}" y="${H - 10}" text-anchor="middle">${md}</text>`;
+
+  const lines = series.map((s) => {
+    const pts = s.points.map((p) => [x(p.md), y(p[key])]);
+    if (!pts.length) return "";
+    const d = pts.map(([px, py], i) => `${i ? "L" : "M"}${px},${py}`).join("");
+    return `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>` +
+      pts.map(([px, py]) => `<circle cx="${px}" cy="${py}" r="4" fill="${s.color}" stroke="var(--surface)" stroke-width="2"/>`).join("");
+  }).join("");
+
+  // Direct labels at each line's end, nudged apart so they don't overlap.
+  const ends = series.filter((s) => s.points.length).map((s) => {
+    const last = s.points[s.points.length - 1];
+    return { label: s.label, color: s.color, x: x(last.md), y: y(last[key]) };
+  }).sort((a, b) => a.y - b.y);
+  for (let i = 1; i < ends.length; i++) ends[i].y = Math.max(ends[i].y, ends[i - 1].y + 13);
+  const labels = ends.map((e) => `<text class="end-label" x="${e.x + 8}" y="${e.y + 4}"><tspan fill="${e.color}">●</tspan> ${esc(e.label)}</text>`).join("");
+
+  // Hover columns, one per matchday.
+  const colW = (W - L - R) / 7;
+  const hits = Array.from({ length: 8 }, (_, i) => {
+    const md = i + 1;
+    const rows = series.map((s) => {
+      const p = s.points.find((q) => q.md === md);
+      return p ? `${s.label}|${s.color}|${p[key]}` : null;
+    }).filter(Boolean).join(";");
+    return `<rect class="hit" x="${x(md) - colW / 2}" y="${T}" width="${colW}" height="${H - T - B}" data-md="${md}" data-x="${x(md)}" data-rows="${esc(rows)}"/>`;
+  }).join("");
+
+  return `<figure class="chart" data-w="${W}">
+    <figcaption>${esc(title)}</figcaption>
+    <div class="chart-box">
+      <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(title)} by matchday">
+        ${grid}
+        <line class="crosshair" x1="0" x2="0" y1="${T}" y2="${H - B}" visibility="hidden"/>
+        ${lines}${labels}${hits}
+      </svg>
+      <div class="chart-tip" hidden></div>
+    </div>
+  </figure>`;
+}
+
+function wireChartHover(root) {
+  root.querySelectorAll(".chart").forEach((fig) => {
+    const svg = fig.querySelector("svg");
+    const tip = fig.querySelector(".chart-tip");
+    const cross = fig.querySelector(".crosshair");
+    const W = Number(fig.dataset.w);
+    svg.addEventListener("pointerover", (e) => {
+      const r = e.target.closest(".hit");
+      if (!r || !r.dataset.rows) return;
+      const cx = Number(r.dataset.x);
+      cross.setAttribute("x1", cx); cross.setAttribute("x2", cx); cross.setAttribute("visibility", "visible");
+      tip.innerHTML = `<strong>Matchday ${r.dataset.md}</strong>` + r.dataset.rows.split(";").map((row) => {
+        const [label, color, v] = row.split("|");
+        return `<div><i style="background:${color}"></i>${esc(label)}<b>${v} pts</b></div>`;
+      }).join("");
+      tip.hidden = false;
+      const frac = cx / W;
+      tip.style.left = `${frac * 100}%`;
+      tip.style.transform = frac > 0.6 ? "translateX(calc(-100% - 12px))" : "translateX(12px)";
+    });
+    svg.addEventListener("pointerleave", () => { tip.hidden = true; cross.setAttribute("visibility", "hidden"); });
+  });
+}
+
+function cutoffCard(title, hint, stats, field, placeLabel) {
+  const rows = stats.filter((s) => s[field] && s.played).map((s) => `
+    <tr class="${s.complete ? "" : "ongoing"}">
+      <td class="season-cell">${esc(s.meta.label)}${s.complete ? "" : ` <span class="tag">so far</span>`}</td>
+      <td class="big">${s[field].points}</td>
+      <td class="big">${signed(s[field].goalDifference)}</td>
+      <td class="team"><div class="team-cell">${crest(s[field].team.crest)}<span>${esc(s[field].team.shortName || s[field].team.name)}</span></div></td>
+    </tr>`).join("");
+  return `<div class="card stat-card">
+      <h2>${esc(title)}</h2>
+      <p class="hint">${esc(hint)}</p>
+      <table class="mini">
+        <thead><tr><th>Season</th><th>Pts</th><th>GD</th><th class="team">${esc(placeLabel)}</th></tr></thead>
+        <tbody>${rows || `<tr><td colspan="4" class="empty">No data.</td></tr>`}</tbody>
+      </table>
+    </div>`;
+}
+
+function cutoffChartsCard(stats) {
+  const series = stats.map((s, i) => ({ label: s.meta.label, color: SEASON_COLORS[i] || "#8b8b92", points: s.byMatchday }));
+  if (!series.some((s) => s.points.length)) return "";
+  const max = Math.max(4, ...series.flatMap((s) => s.points.map((p) => p.p8)));
+  const yMax = Math.ceil(max / 4) * 4;
+  const tableRows = Array.from({ length: 8 }, (_, i) => `<tr><td>${i + 1}</td>${series.map((s) => {
+    const p = s.points.find((q) => q.md === i + 1);
+    return `<td>${p ? `${p.p8} / ${p.p24}` : "–"}</td>`;
+  }).join("")}</tr>`).join("");
+  return `<div class="card stat-card wide">
+      <h2>Cut-off lines by matchday</h2>
+      <p class="hint">Points of the team in 8th and 24th place after each matchday. Hover a matchday to compare seasons.</p>
+      <ul class="legend chart-legend">${series.map((s) => `<li><span class="dot" style="background:${s.color}"></span>${esc(s.label)}</li>`).join("")}</ul>
+      <div class="charts">
+        ${lineChart("8th place · Round of 16", "p8", series, yMax)}
+        ${lineChart("24th place · Play-offs", "p24", series, yMax)}
+      </div>
+      <details class="chart-table">
+        <summary>Show as table</summary>
+        <table class="mini">
+          <thead><tr><th>Matchday</th>${series.map((s) => `<th>${esc(s.label)}<br><small>8th / 24th</small></th>`).join("")}</tr></thead>
+          <tbody>${tableRows}</tbody>
+        </table>
+      </details>
+    </div>`;
 }
 
 function renderStats(stats) {
-  const cutoffRows = stats.filter((s) => s.cutoff && s.played).map((s) => `
-    <tr class="${s.complete ? "" : "ongoing"}">
-      <td class="season-cell">${esc(s.meta.label)}${s.complete ? "" : ` <span class="tag">so far</span>`}</td>
-      <td class="big">${s.cutoff.points}</td>
-      <td class="big">${signed(s.cutoff.goalDifference)}</td>
-      <td class="team"><div class="team-cell">${crest(s.cutoff.team.crest)}<span>${esc(s.cutoff.team.shortName || s.cutoff.team.name)}</span></div></td>
-    </tr>`).join("");
-
   const hdaRows = stats.filter((s) => s.played).map((s) => {
     const n = s.played, h = pct(s.home, n), d = pct(s.draw, n), a = 100 - h - d;
     const seg = (cls, v, count, what) => (v ? `<span class="seg ${cls}" style="flex:${v}" title="${count} ${what}">${v}%</span>` : "");
@@ -315,15 +453,10 @@ function renderStats(stats) {
     </div>`).join("");
 
   $("#stats").innerHTML = `
-    <div class="card stat-card">
-      <h2>Needed for the play-offs</h2>
-      <p class="hint">Points and goal difference of the team in 24th place after the league phase.</p>
-      <table class="mini">
-        <thead><tr><th>Season</th><th>Pts</th><th>GD</th><th class="team">24th place</th></tr></thead>
-        <tbody>${cutoffRows || `<tr><td colspan="4" class="empty">No data.</td></tr>`}</tbody>
-      </table>
-    </div>
-    <div class="card stat-card">
+    ${cutoffCard("Needed for the top 8", "Points and goal difference of the team in 8th place after the league phase.", stats, "cutoff8", "8th place")}
+    ${cutoffCard("Needed for the play-offs", "Points and goal difference of the team in 24th place after the league phase.", stats, "cutoff24", "24th place")}
+    ${cutoffChartsCard(stats)}
+    <div class="card stat-card wide">
       <h2>Home wins, draws, away wins</h2>
       <p class="hint">Share of league-phase matches.</p>
       ${hdaRows || `<p class="empty">No matches played yet.</p>`}
@@ -355,6 +488,7 @@ async function loadStats() {
       return seasonStats(meta, standings, matches.matches || []);
     }));
     renderStats(stats);
+    wireChartHover($("#stats"));
   } catch (err) {
     console.error(err);
     statsLoaded = false;
