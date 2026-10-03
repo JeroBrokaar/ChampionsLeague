@@ -202,7 +202,7 @@ td.gd-neg { color: var(--loss); }
 /* Prediction columns (current season, league phase only) */
 .standings.no-pred .pred-col { display: none; }
 .standings .pred-first { border-left: 1px solid var(--line); }
-.standings td.pred-col { min-width: 56px; cursor: help; }
+.standings td.pred-col { min-width: 56px; }
 .pred-num { display: block; font-weight: 700; font-variant-numeric: tabular-nums; }
 .pred-bar { display: block; height: 4px; margin: 3px auto 0; width: 40px; background: var(--bg); border-radius: 2px; overflow: hidden; }
 .pred-bar span { display: block; height: 100%; background: var(--text); border-radius: 2px; }

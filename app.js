@@ -277,14 +277,6 @@ function predictAll(model, table, finishedLeague, potOf, status) {
   return new Map([...raw].map(([id, p]) => [id, { ...p, raw8: p.top8, raw24: p.top24, top8: top8.get(id), top24: top24.get(id) }]));
 }
 
-function eventLabel(e) {
-  const [kind, pot, a, b] = e.split(":");
-  if (kind === "pot") return `History of Pot ${pot} teams`;
-  if (kind === "p") return `${a} pt${a === "1" ? "" : "s"} from both Pot ${pot} games`;
-  const res = { W: "Win", D: "Draw", L: "Loss" }[b];
-  return `${res} ${a === "H" ? "at home vs" : "away vs"} Pot ${pot}`;
-}
-
 // Model from all finished seasons with pot data, except the one being predicted.
 async function modelFor(excludeId) {
   const past = [];
@@ -303,15 +295,7 @@ const pctText = (p) => `${Math.round(p * 100)}%`;
 function predCells(pred) {
   if (!pred) return "";
   const t8 = pred.top8, t24 = pred.top24;
-  const arrow = (p, key) => (p > BASE[key] + 0.02 ? "↑" : p < BASE[key] - 0.02 ? "↓" : "→");
-  const lines = pred.parts.map((x, i) => {
-    const what = `top 8 ${pctText(x.top8.p)}${i ? ` ${arrow(x.top8.p, "top8")}` : ""}, top 24 ${pctText(x.top24.p)}${i ? ` ${arrow(x.top24.p, "top24")}` : ""}`;
-    return i === 0 ? `Start: ${eventLabel(x.e)}: ${what}` : `• ${eventLabel(x.e)}: ${what} (${x.top8.n}× before)`;
-  }).join("\n");
-  const title = `${lines}\n(↑/↓: past teams with this result did better/worse than the average of ` +
-    `${pctText(BASE.top8)} / ${pctText(BASE.top24)})\nCombined: top 8 ${pctText(pred.raw8)}, top 24 ${pctText(pred.raw24)}\n` +
-    `Scaled so all teams add up to 8 and 24 places: top 8 ${pctText(t8)}, top 24 ${pctText(t24)}`;
-  const cell = (p, first) => `<td class="pred-col${first ? " pred-first" : ""}" title="${esc(title)}">
+  const cell = (p, first) => `<td class="pred-col${first ? " pred-first" : ""}">
     <span class="pred-num">${pctText(p)}</span><span class="pred-bar"><span style="width:${p * 100}%"></span></span></td>`;
   return cell(t8, true) + cell(t24, false);
 }
