@@ -199,21 +199,30 @@ function showView(view) {
     t.setAttribute("aria-selected", active);
   });
   document.querySelectorAll(".view").forEach((v) => (v.hidden = v.id !== `view-${view}`));
+  document.body.dataset.view = view;
   history.replaceState(null, "", `${location.pathname}${location.search}${view === "table" ? "" : `#${view}`}`);
+  if (view === "stats") loadStats();
 }
 document.querySelectorAll(".tab").forEach((t) => t.addEventListener("click", () => showView(t.dataset.view)));
-if (location.hash === "#matches") showView("matches");
 
 /* ---------- Seasons ---------- */
 
 let allPots = {};
 
-async function loadSeason(id) {
+const seasonCache = new Map();
+function fetchSeason(id) {
   const base = id ? `data/${id}` : "data";
-  const [standings, matches] = await Promise.all([
-    loadJson(`${base}/standings.json`),
-    loadJson(`${base}/matches.json`).catch(() => ({ matches: [] })),
-  ]);
+  if (!seasonCache.has(base)) {
+    seasonCache.set(base, Promise.all([
+      loadJson(`${base}/standings.json`),
+      loadJson(`${base}/matches.json`).catch(() => ({ matches: [] })),
+    ]));
+  }
+  return seasonCache.get(base);
+}
+
+async function loadSeason(id) {
+  const [standings, matches] = await fetchSeason(id);
   const s = new Date(standings.season.startDate).getFullYear();
   const pots = allPots[String(s)];
   $(".standings").classList.toggle("no-pots", !pots);
@@ -250,6 +259,109 @@ function showError(err) {
   $("#match-list").innerHTML = `<div class="card empty">No data yet.</div>`;
 }
 
+/* ---------- Statistics ---------- */
+
+let seasonIndex = [];
+let statsLoaded = false;
+
+const pct = (n, total) => (total ? Math.round((n / total) * 100) : 0);
+const posZone = (pos) => (pos <= 8 ? "z1" : pos <= 24 ? "z2" : "z3");
+const signed = (n) => (n > 0 ? `+${n}` : String(n));
+
+function seasonStats(meta, standings, matches) {
+  const league = matches.filter((m) => m.stage === "LEAGUE_STAGE");
+  const finished = league.filter((m) => m.status === "FINISHED");
+  const complete = league.length > 0 && finished.length === league.length;
+  let home = 0, draw = 0, away = 0;
+  for (const m of finished) {
+    const { home: h, away: a } = m.score.fullTime;
+    if (h > a) home++; else if (h < a) away++; else draw++;
+  }
+  const table = standings.table || [];
+  // Final position = row order (the data can list tied teams with the same position).
+  const posOf = new Map(table.map((r, i) => [r.team.id, { pos: i + 1, team: r.team }]));
+  const pots = allPots[meta.id];
+  const potPositions = pots
+    ? ["1", "2", "3", "4"].map((k) => (pots[k] || []).map((id) => posOf.get(id)).filter(Boolean).sort((a, b) => a.pos - b.pos))
+    : null;
+  return { meta, complete, played: finished.length, home, draw, away, cutoff: table[23], potPositions };
+}
+
+function renderStats(stats) {
+  const cutoffRows = stats.filter((s) => s.cutoff && s.played).map((s) => `
+    <tr class="${s.complete ? "" : "ongoing"}">
+      <td class="season-cell">${esc(s.meta.label)}${s.complete ? "" : ` <span class="tag">so far</span>`}</td>
+      <td class="big">${s.cutoff.points}</td>
+      <td class="big">${signed(s.cutoff.goalDifference)}</td>
+      <td class="team"><div class="team-cell">${crest(s.cutoff.team.crest)}<span>${esc(s.cutoff.team.shortName || s.cutoff.team.name)}</span></div></td>
+    </tr>`).join("");
+
+  const hdaRows = stats.filter((s) => s.played).map((s) => {
+    const n = s.played, h = pct(s.home, n), d = pct(s.draw, n), a = 100 - h - d;
+    const seg = (cls, v, count, what) => (v ? `<span class="seg ${cls}" style="flex:${v}" title="${count} ${what}">${v}%</span>` : "");
+    return `<div class="hda-row">
+      <div class="hda-label">${esc(s.meta.label)}<small>${n} matches${s.complete ? "" : " so far"}</small></div>
+      <div class="hda-bar">${seg("home-win", h, s.home, "home wins")}${seg("draw", d, s.draw, "draws")}${seg("away-win", a, s.away, "away wins")}</div>
+    </div>`;
+  }).join("");
+
+  const potBlocks = stats.filter((s) => s.complete && s.potPositions).map((s) => `
+    <div class="pot-season">
+      <h3>${esc(s.meta.label)}</h3>
+      ${s.potPositions.map((list, i) => `<div class="pot-row">
+        <span class="pot-label">Pot ${i + 1}</span>
+        <span class="chips">${list.map((x) => `<span class="pchip ${posZone(x.pos)}" title="${esc(x.team.shortName || x.team.name)}">${x.pos}</span>`).join("")}</span>
+      </div>`).join("")}
+    </div>`).join("");
+
+  $("#stats").innerHTML = `
+    <div class="card stat-card">
+      <h2>Needed for the play-offs</h2>
+      <p class="hint">Points and goal difference of the team in 24th place after the league phase.</p>
+      <table class="mini">
+        <thead><tr><th>Season</th><th>Pts</th><th>GD</th><th class="team">24th place</th></tr></thead>
+        <tbody>${cutoffRows || `<tr><td colspan="4" class="empty">No data.</td></tr>`}</tbody>
+      </table>
+    </div>
+    <div class="card stat-card">
+      <h2>Home wins, draws, away wins</h2>
+      <p class="hint">Share of league-phase matches.</p>
+      ${hdaRows || `<p class="empty">No matches played yet.</p>`}
+      <ul class="legend">
+        <li><span class="dot" style="background:var(--win)"></span>Home win</li>
+        <li><span class="dot" style="background:var(--draw-cell)"></span>Draw</li>
+        <li><span class="dot" style="background:var(--loss)"></span>Away win</li>
+      </ul>
+    </div>
+    <div class="card stat-card wide">
+      <h2>Final positions per pot</h2>
+      <p class="hint">Where the teams from each draw pot finished in the league phase. Hover a number to see the team.</p>
+      <div class="pot-seasons">${potBlocks || `<p class="empty">Available once a league phase is finished.</p>`}</div>
+      <ul class="legend">
+        <li><span class="dot" style="background:var(--win)"></span>1–8 · Round of 16</li>
+        <li><span class="dot" style="background:var(--draw-cell)"></span>9–24 · Play-offs</li>
+        <li><span class="dot" style="background:var(--loss)"></span>25–36 · Eliminated</li>
+      </ul>
+    </div>`;
+}
+
+async function loadStats() {
+  if (statsLoaded) return;
+  statsLoaded = true;
+  try {
+    if (!seasonIndex.length) throw new Error("no season index");
+    const stats = await Promise.all(seasonIndex.map(async (meta) => {
+      const [standings, matches] = await fetchSeason(meta.id);
+      return seasonStats(meta, standings, matches.matches || []);
+    }));
+    renderStats(stats);
+  } catch (err) {
+    console.error(err);
+    statsLoaded = false;
+    $("#stats").innerHTML = `<div class="card empty">Statistics are not available yet.</div>`;
+  }
+}
+
 /* ---------- Boot ---------- */
 
 (async function init() {
@@ -257,7 +369,10 @@ function showError(err) {
     allPots = (await loadJson("pots.json").catch(() => ({ seasons: {} }))).seasons || {};
     // Older deploys only have data/standings.json; fall back to that.
     const index = await loadJson("data/seasons.json").catch(() => null);
-    const id = index?.seasons?.length ? setupSeasonPicker(index.seasons) : null;
+    seasonIndex = index?.seasons || [];
+    const id = seasonIndex.length ? setupSeasonPicker(seasonIndex) : null;
+    const startView = location.hash.slice(1);
+    if (startView === "matches" || startView === "stats") showView(startView);
     await loadSeason(id);
   } catch (err) {
     showError(err);
