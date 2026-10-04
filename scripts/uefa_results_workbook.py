@@ -69,7 +69,8 @@ def check(label, rows, pot_map, games, n_pots):
     ko = Counter(r[1].split(" - ")[0] for r in rows if not r[1].startswith("League"))
     expected = {"Play-offs": 16, "Round of 16": 16, "Quarter-finals": 8, "Semi-finals": 4, "Final": 1}
     for rnd, n in expected.items():
-        if ko.get(rnd, 0) != n:
+        # Rounds not drawn yet (current season) are simply absent; a partial round is a problem.
+        if ko.get(rnd, 0) not in (0, n):
             problems.append(f"{rnd}: {ko.get(rnd, 0)} matches instead of {n}")
     ko_teams = {t for r in rows if not r[1].startswith("League") for t in r[2:4]}
     if ko_teams - teams:
