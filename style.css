@@ -266,6 +266,9 @@ body[data-view="match"] .season-select { visibility: hidden; }
 .facts li { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: var(--bg); border-radius: 8px; font-size: 14px; }
 .facts .crest { width: 22px; height: 22px; }
 .h2h-card .empty-note { margin-top: 6px; }
+.debuts { list-style: none; padding: 0; margin: 10px 0 4px; display: flex; flex-wrap: wrap; gap: 6px; }
+.debuts li { font-size: 13px; font-weight: 600; padding: 6px 10px; border-radius: 999px; border: 1px solid var(--accent); }
+.debuts li::before { content: "★ "; color: var(--accent); }
 .h2h-wrap { display: grid; grid-template-columns: minmax(240px, 320px) 1fr; gap: 12px 28px; align-items: start; margin-top: 10px; }
 .h2h-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; text-align: center; }
 .h2h-list { min-width: 0; }

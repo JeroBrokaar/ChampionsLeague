@@ -1001,7 +1001,7 @@ function groupFact(name, games, label, topic) {
 // phrased positively ("lost their last 3", not "haven't won"), most notable first.
 function teamFacts(team, hist, venue, oppCountry, countryOf) {
   const name = tname(team);
-  if (!hist.length) return [{ score: 1, text: `${name} play their first Champions League match in this format.` }];
+  if (!hist.length) return []; // debut: mentioned in the head-to-head card
   const facts = [];
   const add = (topic, score, text) => facts.push({ topic, score, text });
   const where = venue === "home" ? "home" : "away";
@@ -1106,6 +1106,19 @@ async function renderMatch(id) {
   const meetings = hHist.filter((g) => g.opp.id === A.id);
   let hw = 0, dr = 0, aw = 0;
   for (const g of meetings) { if (g.res === "W") hw++; else if (g.res === "L") aw++; else dr++; }
+  // Debuts: first match at all, or the home team's first home / away team's first away game.
+  // Counts every earlier fixture (played or not), so a future match isn't called a debut
+  // just because the games before it haven't been played yet.
+  const earlier = (team) => seasons.flatMap((s) => s.matches).filter((x) => x.utcDate < m.utcDate && x.status !== "CANCELLED" &&
+    (x.homeTeam?.id === team.id || x.awayTeam?.id === team.id));
+  const debut = (team, venue) => {
+    const prev = earlier(team);
+    if (!prev.length) return `This is ${tname(team)}'s first Champions League match in this format.`;
+    const atVenue = prev.filter((x) => x.stage !== "FINAL" && (x.homeTeam?.id === team.id) === (venue === "home"));
+    return atVenue.length ? "" : `This is ${tname(team)}'s first Champions League ${venue} game in this format.`;
+  };
+  const debuts = [debut(H, "home"), debut(A, "away")].filter(Boolean);
+  const debutHtml = debuts.length ? `<ul class="debuts">${debuts.map((d) => `<li>${d}</li>`).join("")}</ul>` : "";
   const h2hHtml = meetings.length
     ? `<div class="h2h-wrap"><div class="h2h-summary">
         <div><b>${hw}</b><span>${tname(H)} wins</span></div>
@@ -1149,6 +1162,7 @@ async function renderMatch(id) {
     </div>
     <div class="card stat-card wide h2h-card">
       <h2>Head to head</h2>
+      ${debutHtml}
       ${h2hHtml}
     </div>
     <div class="card stat-card wide">
