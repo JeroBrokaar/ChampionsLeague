@@ -1001,7 +1001,7 @@ function groupFact(name, games, label, topic) {
 // phrased positively ("lost their last 3", not "haven't won"), most notable first.
 function teamFacts(team, hist, venue, oppCountry, countryOf) {
   const name = tname(team);
-  if (!hist.length) return []; // debut: mentioned in the head-to-head card
+  if (!hist.length) return []; // debut: added separately at the top of the talking points
   const facts = [];
   const add = (topic, score, text) => facts.push({ topic, score, text });
   const where = venue === "home" ? "home" : "away";
@@ -1117,8 +1117,7 @@ async function renderMatch(id) {
     const atVenue = prev.filter((x) => x.stage !== "FINAL" && (x.homeTeam?.id === team.id) === (venue === "home"));
     return atVenue.length ? "" : `This is ${tname(team)}'s first Champions League ${venue} game in this format.`;
   };
-  const debuts = [debut(H, "home"), debut(A, "away")].filter(Boolean);
-  const debutHtml = debuts.length ? `<ul class="debuts">${debuts.map((d) => `<li>${d}</li>`).join("")}</ul>` : "";
+  const debutFacts = [[H, debut(H, "home")], [A, debut(A, "away")]].filter(([, text]) => text).map(([team, text]) => ({ team, text }));
   const h2hHtml = meetings.length
     ? `<div class="h2h-wrap"><div class="h2h-summary">
         <div><b>${hw}</b><span>${tname(H)} wins</span></div>
@@ -1137,6 +1136,7 @@ async function renderMatch(id) {
   const facts = [...teamFacts(H, hHist, "home", countryOf.get(A.id), countryOf).map((f) => ({ ...f, team: H })),
     ...teamFacts(A, aHist, "away", countryOf.get(H.id), countryOf).map((f) => ({ ...f, team: A }))]
     .sort((a, b) => b.score - a.score);
+  facts.unshift(...debutFacts);
 
   box.innerHTML = `
     <div class="card stat-card wide md-head">
@@ -1162,7 +1162,6 @@ async function renderMatch(id) {
     </div>
     <div class="card stat-card wide h2h-card">
       <h2>Head to head</h2>
-      ${debutHtml}
       ${h2hHtml}
     </div>
     <div class="card stat-card wide">
