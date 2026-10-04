@@ -259,7 +259,13 @@ body[data-view="match"] .season-select { visibility: hidden; }
 .facts { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
 .facts li { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: var(--bg); border-radius: 8px; font-size: 14px; }
 .facts .crest { width: 22px; height: 22px; }
-.h2h-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 10px 0 12px; text-align: center; }
+.h2h-card .empty-note { margin-top: 6px; }
+.h2h-wrap { display: grid; grid-template-columns: minmax(240px, 320px) 1fr; gap: 12px 28px; align-items: start; margin-top: 10px; }
+.h2h-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; text-align: center; }
+.h2h-list { min-width: 0; }
+.cmp-wrap { max-width: 640px; margin: 0 auto; }
+.cmp-wrap .seg-buttons { justify-content: center; }
+@media (max-width: 700px) { .h2h-wrap { grid-template-columns: 1fr; } }
 .h2h-summary div { background: var(--bg); border-radius: 8px; padding: 10px 6px; display: flex; flex-direction: column; }
 .h2h-summary b { font-size: 22px; font-weight: 800; }
 .h2h-summary span { color: var(--muted); font-size: 12px; }

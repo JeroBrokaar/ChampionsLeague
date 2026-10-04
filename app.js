@@ -1032,16 +1032,16 @@ async function renderMatch(id) {
   let hw = 0, dr = 0, aw = 0;
   for (const g of meetings) { if (g.res === "W") hw++; else if (g.res === "L") aw++; else dr++; }
   const h2hHtml = meetings.length
-    ? `<div class="h2h-summary">
+    ? `<div class="h2h-wrap"><div class="h2h-summary">
         <div><b>${hw}</b><span>${tname(H)} wins</span></div>
         <div><b>${dr}</b><span>Draws</span></div>
         <div><b>${aw}</b><span>${tname(A)} wins</span></div>
       </div>
-      ${meetings.map((g) => `<div class="h2h-row">
+      <div class="h2h-list">${meetings.map((g) => `<div class="h2h-row">
         <span class="fx-when">${longDate(g.m.utcDate)}</span>
         <span class="h2h-teams">${tname(g.m.homeTeam)} <b>${g.m.score.fullTime.home}–${g.m.score.fullTime.away}</b> ${tname(g.m.awayTeam)}${g.m.score.pens ? ` <small class="muted">(pens ${g.m.score.pens.home}–${g.m.score.pens.away})</small>` : ""}</span>
         <span class="fx-extra">${esc(stageLabel(g.m))}</span>
-      </div>`).join("")}`
+      </div>`).join("")}</div></div>`
     : `<p class="empty-note">${tname(H)} and ${tname(A)} haven't met in the Champions League since ${esc(seasons[seasons.length - 1].meta.label)}. This is their first meeting in this format.</p>`;
 
   const hHome = hHist.filter((g) => g.home && !g.final), aAway = aHist.filter((g) => !g.home && !g.final);
@@ -1071,18 +1071,20 @@ async function renderMatch(id) {
       ${facts.length ? `<ul class="facts">${facts.map((f) => `<li>${crest(f.team.crest)}<span>${f.text}</span></li>`).join("")}</ul>`
         : `<p class="empty-note">Nothing remarkable yet.</p>`}
     </div>
-    <div class="card stat-card">
+    <div class="card stat-card wide h2h-card">
       <h2>Head to head</h2>
       ${h2hHtml}
     </div>
-    <div class="card stat-card">
+    <div class="card stat-card wide">
       <h2>${tname(H)} at home vs ${tname(A)} away</h2>
-      <div class="seg-buttons" role="group" aria-label="Period">
-        <button type="button" data-cmp="all" class="active">Since ${esc(seasons[seasons.length - 1].meta.label)}</button>
-        <button type="button" data-cmp="season">This season</button>
+      <div class="cmp-wrap">
+        <div class="seg-buttons" role="group" aria-label="Period">
+          <button type="button" data-cmp="all" class="active">Since ${esc(seasons[seasons.length - 1].meta.label)}</button>
+          <button type="button" data-cmp="season">This season</button>
+        </div>
+        <div class="cmp-head"><span>${crest(H.crest)}${tname(H)} home</span><span>${tname(A)} away${crest(A.crest)}</span></div>
+        <div id="cmp-body">${compareRows(recordOf(hHome), recordOf(aAway))}</div>
       </div>
-      <div class="cmp-head"><span>${crest(H.crest)}${tname(H)} home</span><span>${tname(A)} away${crest(A.crest)}</span></div>
-      <div id="cmp-body">${compareRows(recordOf(hHome), recordOf(aAway))}</div>
     </div>`;
 
   box.querySelectorAll("[data-cmp]").forEach((btn) => btn.addEventListener("click", () => {
