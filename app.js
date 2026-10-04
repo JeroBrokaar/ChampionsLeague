@@ -801,21 +801,21 @@ function stageLabel(m) {
   return m.stage === "LEAGUE_STAGE" ? `Matchday ${m.matchday}` : STAGE_LABELS[m.stage] || m.stage;
 }
 
+// One block per competition the club played (home / away / final / total), then all matches.
 function recordTableHtml(rec) {
   const line = (label, r, cls = "") => `<tr class="${cls}">
       <td class="season-cell">${label}</td><td>${r.p}</td><td>${r.w}</td><td>${r.d}</td><td>${r.l}</td>
       <td class="goals goals-start">${r.gf}</td><td class="goals">${r.ga}</td><td class="goals">${signed(r.gf - r.ga)}</td>
     </tr>`;
-  const group = (title) => `<tr class="group"><td colspan="8">${title}</td></tr>`;
-  const ko = rec.ko.total.p
-    ? group("Knockout phase") + line("Home", rec.ko.home) + line("Away", rec.ko.away) +
-      (rec.ko.final.p ? line("Final", rec.ko.final) : "") + line("Total", rec.ko.total, "subtotal")
-    : group("Knockout phase") + `<tr><td colspan="8" class="muted">No knockout matches yet.</td></tr>`;
+  const blocks = Object.values(COMPS).filter((c) => rec.byComp[c.key]?.total.p).map((c) => {
+    const r = rec.byComp[c.key];
+    return `<tr class="group"><td colspan="8">${compSticker(c)}</td></tr>` +
+      line("Home", r.home) + line("Away", r.away) + (r.final.p ? line("Final", r.final) : "") + line("Total", r.total, "subtotal");
+  }).join("");
   return `<table class="mini club-record">
     <thead><tr><th></th><th>P</th><th>W</th><th>D</th><th>L</th><th class="goals-start">GF</th><th>GA</th><th>GD</th></tr></thead>
     <tbody>
-      ${group("League phase")}${line("Home", rec.league.home)}${line("Away", rec.league.away)}${line("Total", rec.league.total, "subtotal")}
-      ${ko}
+      ${blocks}
       ${line("All matches", rec.total, "total")}
     </tbody>
   </table>`;
@@ -888,28 +888,26 @@ function compSticker(c) {
   return `<span class="comp-sticker ${c.key}" title="${esc(c.name)}"><span class="long">${esc(c.name)}</span><span class="short">${c.key.toUpperCase()}</span></span>`;
 }
 
-// Record split into league phase (home/away) and knockout phase (home/away/final at a neutral venue).
+// Record per competition: home, away and the final (neutral venue), plus totals.
 function clubRecord(ids, seasons) {
   const blank = () => ({ p: 0, w: 0, d: 0, l: 0, gf: 0, ga: 0 });
-  const rec = { league: { home: blank(), away: blank() }, ko: { home: blank(), away: blank(), final: blank() } };
+  const byComp = {};
   for (const s of seasons) {
+    const r0 = (byComp[s.comp.key] ??= { home: blank(), away: blank(), final: blank() });
     for (const m of s.matches) {
       if (m.status !== "FINISHED") continue;
       const home = ids.has(m.homeTeam?.id);
       if (!home && !ids.has(m.awayTeam?.id)) continue;
       const { home: h, away: a } = m.score.fullTime;
       const gf = home ? h : a, ga = home ? a : h;
-      const phase = m.stage === "LEAGUE_STAGE" ? rec.league : rec.ko;
-      const r = m.stage === "FINAL" ? phase.final : home ? phase.home : phase.away;
+      const r = m.stage === "FINAL" ? r0.final : home ? r0.home : r0.away;
       r.p++; r.gf += gf; r.ga += ga;
       if (gf > ga) r.w++; else if (gf < ga) r.l++; else r.d++;
     }
   }
   const sum = (...parts) => parts.reduce((t, r) => { for (const f of Object.keys(t)) t[f] += r[f]; return t; }, blank());
-  rec.league.total = sum(rec.league.home, rec.league.away);
-  rec.ko.total = sum(rec.ko.home, rec.ko.away, rec.ko.final);
-  rec.total = sum(rec.league.total, rec.ko.total);
-  return rec;
+  for (const r of Object.values(byComp)) r.total = sum(r.home, r.away, r.final);
+  return { byComp, total: sum(...Object.values(byComp).map((r) => r.total)) };
 }
 
 function renderClub(anyId) {
