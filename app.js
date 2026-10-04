@@ -115,9 +115,9 @@ const STATUS = {
 // Conservative, points-only check: a team is "safe" for the top N only if at most N-1
 // others could still reach its current points, and "out" only if at least N others
 // already have more points than it can still reach. Ties count against the team.
-function clinchStatus(table) {
-  if (!table.length || table.every((r) => r.playedGames >= LEAGUE_GAMES)) return null;
-  const rows = table.map((r) => ({ id: r.team.id, min: r.points, max: r.points + 3 * (LEAGUE_GAMES - r.playedGames) }));
+function clinchStatus(table, games = LEAGUE_GAMES) {
+  if (!table.length || table.every((r) => r.playedGames >= games)) return null;
+  const rows = table.map((r) => ({ id: r.team.id, min: r.points, max: r.points + 3 * (games - r.playedGames) }));
   const status = new Map();
   for (const t of rows) {
     const canCatch = rows.filter((o) => o !== t && o.max >= t.min).length;
@@ -370,6 +370,15 @@ function onMatchActivate(e) {
   const el = e.target.closest("[data-match]");
   if (!el || (e.type === "keydown" && e.key !== "Enter" && e.key !== " ")) return;
   e.preventDefault();
+  const comp = el.dataset.comp;
+  if (comp && comp !== COMP.key) {
+    // Match of another competition: open it there (full page in that competition).
+    const params = new URLSearchParams(location.search);
+    params.delete("season");
+    if (comp === "cl") params.delete("comp"); else params.set("comp", comp);
+    location.href = `${location.pathname}?${params}#match-${el.dataset.match}`;
+    return;
+  }
   openMatch(Number(el.dataset.match), true, e.currentTarget.id === "club-body" ? "club" : "matches");
 }
 for (const id of ["match-list", "club-body"]) {
@@ -382,7 +391,7 @@ window.addEventListener("popstate", () => {
   if (h.startsWith("match-")) openMatch(Number(h.slice(6)), false);
   else showView(["matches", "stats", "club", ...(FEATURES.simulationTab ? ["sim"] : [])].includes(h) ? h : "table");
   const club = Number(new URLSearchParams(location.search).get("club"));
-  if (h === "club" && clubLoaded && club && clubData?.clubs.has(club)) {
+  if (h === "club" && clubLoaded && club && europe?.byId.has(club)) {
     $("#club-select").value = String(club);
     renderClub(club);
   }
@@ -414,8 +423,8 @@ function applyCrests(teams) {
 }
 
 const seasonCache = new Map();
-function fetchSeason(id) {
-  const base = id ? `${COMP.base}/${id}` : COMP.base;
+function fetchSeason(id, comp = COMP) {
+  const base = id ? `${comp.base}/${id}` : comp.base;
   if (!seasonCache.has(base)) {
     seasonCache.set(base, Promise.all([
       loadJson(`${base}/standings.json`),
@@ -741,24 +750,7 @@ async function loadClubData() {
     const [w, r] = homeWon ? [final.homeTeam, final.awayTeam] : [final.awayTeam, final.homeTeam];
     finals.push({ season: s.meta.label, winner: { name: w.shortName, id: w.id }, runnerUp: { name: r.shortName, id: r.id } });
   }
-  // Past seasons of all three competitions, to show where a club played each season.
-  const elsewhere = {};
-  for (const meta of seasonIndex.filter((m) => !m.current)) {
-    elsewhere[meta.id] = {};
-    for (const c of Object.values(COMPS)) {
-      if (c === COMP) {
-        const own = seasons.find((x) => x.meta.id === meta.id);
-        elsewhere[meta.id][c.key] = { table: own.table, matches: own.matches };
-        continue;
-      }
-      try {
-        const [st, ma] = await Promise.all([loadJson(`${c.base}/${meta.id}/standings.json`), loadJson(`${c.base}/${meta.id}/matches.json`)]);
-        removeShootouts(ma);
-        elsewhere[meta.id][c.key] = { table: st.table || [], matches: ma.matches || [] };
-      } catch { /* that competition has no data for this season */ }
-    }
-  }
-  clubData = { seasons, clubs, countryOf, competitions, elsewhere };
+  clubData = { seasons, clubs, countryOf, competitions };
   return clubData;
 }
 
@@ -786,14 +778,14 @@ function sameClub(entry, team) {
 }
 
 // European titles, one line per cup.
-function honoursHtml(team, competitions) {
+function honoursHtml(teams, competitions) {
   const years = (list, key) => list.map((f) => {
     const other = key === "winner" ? f.runnerUp.name : f.winner.name;
     return `<span class="final-year" title="${esc(f.season)} final: ${key === "winner" ? "beat" : "lost to"} ${esc(other)}">${finalYear(f.season)}</span>`;
   }).join("");
   const group = (cls, heading, key) => {
     const lines = competitions.map((c) => {
-      const list = c.finals.filter((f) => sameClub(f[key], team));
+      const list = c.finals.filter((f) => teams.some((t) => sameClub(f[key], t)));
       return list.length ? `<div class="honour ${cls}">
           <div class="honour-head"><b>${list.length}×</b><span>${esc(c.title)}</span></div>
           <div class="final-years">${years(list, key)}</div>
@@ -807,30 +799,6 @@ function honoursHtml(team, competitions) {
 
 function stageLabel(m) {
   return m.stage === "LEAGUE_STAGE" ? `Matchday ${m.matchday}` : STAGE_LABELS[m.stage] || m.stage;
-}
-
-// Record split into league phase (home/away) and knockout phase (home/away/final at a neutral venue).
-function clubRecord(id, seasons) {
-  const blank = () => ({ p: 0, w: 0, d: 0, l: 0, gf: 0, ga: 0 });
-  const rec = { league: { home: blank(), away: blank() }, ko: { home: blank(), away: blank(), final: blank() } };
-  for (const s of seasons) {
-    for (const m of s.matches) {
-      if (m.status !== "FINISHED") continue;
-      const home = m.homeTeam?.id === id;
-      if (!home && m.awayTeam?.id !== id) continue;
-      const { home: h, away: a } = m.score.fullTime;
-      const gf = home ? h : a, ga = home ? a : h;
-      const phase = m.stage === "LEAGUE_STAGE" ? rec.league : rec.ko;
-      const r = m.stage === "FINAL" ? phase.final : home ? phase.home : phase.away;
-      r.p++; r.gf += gf; r.ga += ga;
-      if (gf > ga) r.w++; else if (gf < ga) r.l++; else r.d++;
-    }
-  }
-  const sum = (...parts) => parts.reduce((t, r) => { for (const f of Object.keys(t)) t[f] += r[f]; return t; }, blank());
-  rec.league.total = sum(rec.league.home, rec.league.away);
-  rec.ko.total = sum(rec.ko.home, rec.ko.away, rec.ko.final);
-  rec.total = sum(rec.league.total, rec.ko.total);
-  return rec;
 }
 
 function recordTableHtml(rec) {
@@ -853,21 +821,22 @@ function recordTableHtml(rec) {
   </table>`;
 }
 
-function fixtureLine(m, id, posOf, big) {
+function fixtureLine(m, id, posOf, big, compKey) {
   const home = m.homeTeam.id === id;
   const opp = home ? m.awayTeam : m.homeTeam;
   const when = new Date(m.utcDate);
   const date = `${WEEKDAYS[when.getDay()]} ${shortDate(m.utcDate)}`;
   const time = when.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   const extra = posOf.get(opp.id) ? `${ordinal(posOf.get(opp.id))} now` : "";
+  const attrs = `data-match="${m.id}" data-comp="${compKey}" role="button" tabindex="0" aria-label="Match details"`;
   if (big) {
-    return `<div class="next-match clickable" data-match="${m.id}" role="button" tabindex="0" aria-label="Match details">
+    return `<div class="next-match clickable" ${attrs}>
       <div class="next-opp">${crest(opp.crest)}<div><div class="next-name">${home ? "vs" : "at"} ${esc(opp.name)}</div>
         <div class="next-meta">${home ? "Home" : "Away"} · ${esc(stageLabel(m))}${extra ? ` · ${esc(extra)}` : ""}</div></div></div>
       <div class="next-when"><b>${esc(date)}</b><span>${time}</span></div>
     </div>`;
   }
-  return `<div class="fixture-row clickable" data-match="${m.id}" role="button" tabindex="0" aria-label="Match details">
+  return `<div class="fixture-row clickable" ${attrs}>
     <span class="fx-when">${esc(date)}</span>
     <span class="fx-ha ${home ? "h" : "a"}">${home ? "H" : "A"}</span>
     <span class="fx-opp">${crest(opp.crest)}${esc(opp.shortName || opp.name)}</span>
@@ -875,24 +844,93 @@ function fixtureLine(m, id, posOf, big) {
   </div>`;
 }
 
-function renderClub(id) {
-  const { seasons, clubs } = clubData;
-  const team = clubs.get(id);
-  if (!team) return;
-  const current = seasons.find((s) => s.meta.current) || seasons[0];
-  const past = seasons.filter((s) => s !== current);
-  const idx = current.table.findIndex((r) => r.team.id === id);
-  const row = current.table[idx];
+/* ---------- Club page: independent of the competition switch ---------- */
 
-  // Current season
-  let nowHtml;
-  if (row) {
-    const pos = idx + 1, z = posZone(pos);
-    const leagueDone = current.table.every((r) => r.playedGames >= LEAGUE_GAMES);
-    const result = finalResults(current.matches);
-    const status = clinchStatus(current.table)?.get(id);
+// Clubs across all three competitions. Within a competition a club is its team id; across
+// competitions (football-data vs UEFA ids) the same club is recognised by name.
+let europe = null; // { seasons: [{ comp, meta, table, matches }], clubs: [identity], byId: Map(id -> identity), competitions }
+
+const sameTeamName = (a, b) => [a.name, a.shortName].some((n) => [b.name, b.shortName].some((m) => {
+  const x = clubKey(n), y = clubKey(m);
+  return x && y && (x === y || (x.startsWith(`${y} `) && y.length >= 4) || (y.startsWith(`${x} `) && x.length >= 4));
+}));
+
+async function loadEurope() {
+  if (europe) return europe;
+  const seasons = [];
+  for (const comp of Object.values(COMPS)) {
+    const index = await loadJson(`${comp.base}/seasons.json`).catch(() => null);
+    for (const meta of index?.seasons || []) {
+      try {
+        const [standings, matches] = await fetchSeason(meta.id, comp);
+        seasons.push({ comp, meta, table: standings.table || [], matches: matches.matches || [] });
+      } catch { /* season not available */ }
+    }
+  }
+  const clubs = [], byId = new Map();
+  for (const s of seasons) {
+    for (const r of s.table) {
+      if (byId.has(r.team.id)) continue;
+      // Same club in another competition? (never merge two teams of the same competition by name)
+      let club = clubs.find((c) => !c.comps.has(s.comp.key) && sameTeamName(c.team, r.team));
+      if (!club) { club = { ids: new Set(), comps: new Set(), team: r.team }; clubs.push(club); }
+      club.ids.add(r.team.id);
+      club.comps.add(s.comp.key);
+      byId.set(r.team.id, club);
+    }
+  }
+  const { competitions } = await loadClubData();
+  europe = { seasons, clubs, byId, competitions };
+  return europe;
+}
+
+function compSticker(c) {
+  return `<span class="comp-sticker ${c.key}" title="${esc(c.name)}"><span class="long">${esc(c.name)}</span><span class="short">${c.key.toUpperCase()}</span></span>`;
+}
+
+// Record split into league phase (home/away) and knockout phase (home/away/final at a neutral venue).
+function clubRecord(ids, seasons) {
+  const blank = () => ({ p: 0, w: 0, d: 0, l: 0, gf: 0, ga: 0 });
+  const rec = { league: { home: blank(), away: blank() }, ko: { home: blank(), away: blank(), final: blank() } };
+  for (const s of seasons) {
+    for (const m of s.matches) {
+      if (m.status !== "FINISHED") continue;
+      const home = ids.has(m.homeTeam?.id);
+      if (!home && !ids.has(m.awayTeam?.id)) continue;
+      const { home: h, away: a } = m.score.fullTime;
+      const gf = home ? h : a, ga = home ? a : h;
+      const phase = m.stage === "LEAGUE_STAGE" ? rec.league : rec.ko;
+      const r = m.stage === "FINAL" ? phase.final : home ? phase.home : phase.away;
+      r.p++; r.gf += gf; r.ga += ga;
+      if (gf > ga) r.w++; else if (gf < ga) r.l++; else r.d++;
+    }
+  }
+  const sum = (...parts) => parts.reduce((t, r) => { for (const f of Object.keys(t)) t[f] += r[f]; return t; }, blank());
+  rec.league.total = sum(rec.league.home, rec.league.away);
+  rec.ko.total = sum(rec.ko.home, rec.ko.away, rec.ko.final);
+  rec.total = sum(rec.league.total, rec.ko.total);
+  return rec;
+}
+
+function renderClub(anyId) {
+  const club = europe?.byId.get(anyId); // data may still be loading; loadClub renders when it's ready
+  if (!club) return;
+  const currentSeasons = europe.seasons.filter((s) => s.meta.current);
+  const now = currentSeasons.map((s) => ({ s, i: s.table.findIndex((r) => club.ids.has(r.team.id)) })).find((x) => x.i !== -1);
+  const seasonLabel = currentSeasons[0]?.meta.label || "";
+  const team = now ? now.s.table[now.i].team : club.team;
+  const id = team.id;
+
+  // This season, in whichever competition the club plays
+  let nowHtml, resultsHtml, nextHtml;
+  if (now) {
+    const { s, i } = now;
+    const row = s.table[i], pos = i + 1, z = posZone(pos);
+    const leagueDone = s.table.every((r) => r.playedGames >= s.comp.games);
+    const result = finalResults(s.matches);
+    const status = clinchStatus(s.table, s.comp.games)?.get(id);
     nowHtml = `<div class="club-now">
-        <div class="club-pos"><span class="pchip ${z}">${pos}</span><div><b>${ordinal(pos)} of ${current.table.length}</b>
+        <div class="club-pos"><span class="pchip ${z}">${pos}</span><div><b>${ordinal(pos)} of ${s.table.length}</b>
           <span>${leagueDone ? "Final league-phase position" : ZONE_TEXT[z]}${status && STATUS[status] ? ` · ${STATUS[status].title}` : ""}</span></div></div>
         <div class="club-stats">
           <div><b>${row.points}</b><span>Points</span></div>
@@ -902,73 +940,67 @@ function renderClub(id) {
         </div>
         ${result ? `<div class="club-result">Result: <span class="result ${RESULT[result.get(id) || "LEAGUE"].cls}">${RESULT[result.get(id) || "LEAGUE"].label}</span></div>` : ""}
       </div>`;
+    const posOf = new Map(s.table.map((r, k) => [r.team.id, k + 1]));
+    const mine = s.matches.filter((m) => m.homeTeam?.id === id || m.awayTeam?.id === id);
+    const upcoming = mine.filter((m) => m.status !== "FINISHED" && m.homeTeam?.id && m.awayTeam?.id).sort((a, b) => a.utcDate.localeCompare(b.utcDate));
+    nextHtml = upcoming.length
+      ? fixtureLine(upcoming[0], id, posOf, true, s.comp.key) +
+        (upcoming.length > 1 ? `<h3 class="sub-head">After that</h3>${upcoming.slice(1).map((m) => fixtureLine(m, id, posOf, false, s.comp.key)).join("")}` : "")
+      : `<p class="empty-note">No upcoming matches scheduled.</p>`;
+    const played = mine.filter((m) => m.status === "FINISHED").sort((a, b) => a.utcDate.localeCompare(b.utcDate));
+    resultsHtml = played.length
+      ? played.map((m) => {
+          const home = m.homeTeam.id === id;
+          const opp = home ? m.awayTeam : m.homeTeam;
+          const { home: h, away: a } = m.score.fullTime;
+          const my = home ? h : a, their = home ? a : h;
+          const outcome = my > their ? "win" : my < their ? "loss" : "draw";
+          const pens = m.score.pens ? ` <small class="muted">pens ${m.score.pens.home}–${m.score.pens.away}</small>` : "";
+          return `<div class="fixture-row result-row clickable" data-match="${m.id}" data-comp="${s.comp.key}" role="button" tabindex="0" aria-label="Match details">
+            <span class="fx-when">${esc(shortDate(m.utcDate))}</span>
+            <span class="fx-ha ${home ? "h" : "a"}">${home ? "H" : "A"}</span>
+            <span class="fx-opp">${crest(opp.crest)}${esc(opp.shortName || opp.name)}</span>
+            <span class="fx-score"><span class="res ${outcome}">${h}–${a}</span>${pens}</span>
+            <span class="fx-extra">${esc(stageLabel(m))}</span>
+          </div>`;
+        }).join("")
+      : `<p class="empty-note">No matches played yet.</p>`;
   } else {
-    nowHtml = `<p class="empty-note">${esc(team.shortName || team.name)} is not in the ${esc(current.meta.label)} ${COMP.name}.</p>`;
+    nowHtml = `<p class="empty-note">${esc(team.shortName || team.name)} is not in a European league phase in ${esc(seasonLabel)}.</p>`;
+    resultsHtml = nextHtml = `<p class="empty-note">Not taking part this season.</p>`;
   }
 
-  // Upcoming fixtures
-  const posOf = new Map(current.table.map((r, i) => [r.team.id, i + 1]));
-  const upcoming = current.matches
-    .filter((m) => m.status !== "FINISHED" && (m.homeTeam?.id === id || m.awayTeam?.id === id) && m.homeTeam?.id && m.awayTeam?.id)
-    .sort((a, b) => a.utcDate.localeCompare(b.utcDate));
-  const nextHtml = upcoming.length
-    ? fixtureLine(upcoming[0], id, posOf, true) +
-      (upcoming.length > 1 ? `<h3 class="sub-head">After that</h3>${upcoming.slice(1).map((m) => fixtureLine(m, id, posOf, false)).join("")}` : "")
-    : `<p class="empty-note">${row ? "No upcoming matches scheduled." : "Not taking part this season."}</p>`;
-
-  // Results this season (oldest first), coloured from the club's point of view
-  const played = current.matches
-    .filter((m) => m.status === "FINISHED" && (m.homeTeam?.id === id || m.awayTeam?.id === id))
-    .sort((a, b) => a.utcDate.localeCompare(b.utcDate));
-  const resultsHtml = played.length
-    ? played.map((m) => {
-        const home = m.homeTeam.id === id;
-        const opp = home ? m.awayTeam : m.homeTeam;
-        const { home: h, away: a } = m.score.fullTime;
-        const mine = home ? h : a, theirs = home ? a : h;
-        const outcome = mine > theirs ? "win" : mine < theirs ? "loss" : "draw";
-        const pens = m.score.pens ? ` <small class="muted">pens ${m.score.pens.home}–${m.score.pens.away}</small>` : "";
-        return `<div class="fixture-row result-row clickable" data-match="${m.id}" role="button" tabindex="0" aria-label="Match details">
-          <span class="fx-when">${esc(shortDate(m.utcDate))}</span>
-          <span class="fx-ha ${home ? "h" : "a"}">${home ? "H" : "A"}</span>
-          <span class="fx-opp">${crest(opp.crest)}${esc(opp.shortName || opp.name)}</span>
-          <span class="fx-score"><span class="res ${outcome}">${h}–${a}</span>${pens}</span>
-          <span class="fx-extra">${esc(stageLabel(m))}</span>
-        </div>`;
-      }).join("")
-    : `<p class="empty-note">${row ? "No matches played yet." : "Not taking part this season."}</p>`;
-
-  // Recent seasons, oldest first: which European competition the club played, and how it went.
-  const sameTeam = (a, b) => a.id === b.id || [a.name, a.shortName].some((n) => [b.name, b.shortName].some((m) => {
-    const x = clubKey(n), y = clubKey(m);
-    return x && y && (x === y || (x.startsWith(`${y} `) && y.length >= 4) || (y.startsWith(`${x} `) && x.length >= 4));
-  }));
-  const pastHtml = past.slice().reverse().map((s) => {
-    const found = [COMP, ...Object.values(COMPS).filter((c) => c !== COMP)].map((c) => {
-      const d = clubData.elsewhere?.[s.meta.id]?.[c.key];
-      const i = d ? d.table.findIndex((r) => (c === COMP ? r.team.id === id : sameTeam(team, r.team))) : -1;
-      return i === -1 ? null : { c, d, i };
-    }).find(Boolean);
-    if (!found) return `<div class="past-row"><span class="past-season">${esc(s.meta.label)}</span><span class="comp-sticker none">–</span><span class="muted">No European league phase</span></div>`;
-    const { c, d, i } = found;
-    const res = finalResults(d.matches);
-    const key = res ? res.get(d.table[i].team.id) || "LEAGUE" : null;
+  // Recent seasons, oldest first: the competition the club played in, and how it went
+  const pastIds = [...new Set(europe.seasons.filter((s) => !s.meta.current).map((s) => s.meta.id))].sort();
+  const pastHtml = pastIds.map((sid) => {
+    const found = europe.seasons.filter((s) => s.meta.id === sid)
+      .map((s) => ({ s, i: s.table.findIndex((r) => club.ids.has(r.team.id)) })).find((x) => x.i !== -1);
+    const label = europe.seasons.find((s) => s.meta.id === sid).meta.label;
+    if (!found) return `<div class="past-row"><span class="past-season">${esc(label)}</span><span class="comp-sticker none">–</span><span class="muted">No European league phase</span></div>`;
+    const { s, i } = found;
+    const res = finalResults(s.matches);
+    const key = res ? res.get(s.table[i].team.id) || "LEAGUE" : null;
     return `<div class="past-row">
-      <span class="past-season">${esc(s.meta.label)}</span>
-      <span class="comp-sticker ${c.key}" title="${esc(c.name)}"><span class="long">${esc(c.name)}</span><span class="short">${c.key.toUpperCase()}</span></span>
+      <span class="past-season">${esc(label)}</span>
+      ${compSticker(s.comp)}
       <span class="pchip ${posZone(i + 1)}">${i + 1}</span>
-      <span class="past-pts">${d.table[i].points} pts</span>
+      <span class="past-pts">${s.table[i].points} pts</span>
       ${key ? `<span class="result ${RESULT[key].cls}">${RESULT[key].label}</span>` : ""}
     </div>`;
   }).join("");
 
-  const rec = clubRecord(id, seasons);
-  const first = seasons[seasons.length - 1].meta.label;
+  // Titles: match the finals list against every name the club has in our data
+  const members = europe.seasons.flatMap((s) => s.table.map((r) => r.team)).filter((t) => club.ids.has(t.id));
+  const honours = honoursHtml(members, europe.competitions);
+
+  const rec = clubRecord(club.ids, europe.seasons);
+  const first = pastIds.length ? europe.seasons.find((s) => s.meta.id === pastIds[0]).meta.label : seasonLabel;
 
   $("#club-body").innerHTML = `
     <div class="card stat-card wide club-head">
       ${team.crest ? `<img class="club-crest" src="${esc(team.crest)}" alt="">` : ""}
-      <div class="club-title"><h2>${esc(team.name)}</h2><p class="hint">${esc(current.meta.label)} · League phase</p></div>
+      <div class="club-title"><h2>${esc(team.name)}</h2>
+        <p class="hint">${now ? `${compSticker(now.s.comp)} ` : ""}${esc(seasonLabel)} · League phase</p></div>
       ${nowHtml}
     </div>
     <div class="card stat-card">
@@ -980,27 +1012,28 @@ function renderClub(id) {
     </div>
     <div class="card stat-card">
       <h2>Previous seasons</h2>
-      ${honoursHtml(team, clubData.competitions)}
+      ${honours}
       <h3 class="sub-head">Recent seasons</h3>
       <p class="hint">League-phase position and how far the club got.</p>
       ${pastHtml || `<p class="empty-note">No earlier seasons in this format.</p>`}
     </div>
     <div class="card stat-card wide">
-      <h2>Record in this format</h2>
-      <p class="hint">All ${COMP.name} matches since ${esc(first)}, when the 36-team league phase started.
-        The final is played at a neutral venue. Penalty shoot-outs count as draws.</p>
+      <h2>European record in this format</h2>
+      <p class="hint">All Champions League, Europa League and Conference League matches since ${esc(first)}, when the
+        36-team league phase started. The final is played at a neutral venue. Penalty shoot-outs count as draws.</p>
       ${rec.total.p ? recordTableHtml(rec) : `<p class="empty-note">No matches played yet.</p>`}
     </div>`;
 }
 
-// The chosen club is remembered per competition (clubs differ between them).
-const CLUB_KEY = `club-${COMP.key}`;
+// One remembered club for the whole site (the Club page doesn't depend on the competition switch).
+const CLUB_KEY = "club";
 
 function chooseClub(id) {
   try { localStorage.setItem(CLUB_KEY, String(id)); } catch {}
   const params = new URLSearchParams(location.search);
   params.set("club", id);
   history.replaceState(null, "", `${location.pathname}?${params}${location.hash}`);
+  $("#club-select").value = String(id);
   renderClub(id);
 }
 
@@ -1009,25 +1042,24 @@ async function loadClub() {
   if (clubLoaded) return;
   clubLoaded = true;
   try {
-    const { seasons, clubs } = await loadClubData();
-    const current = seasons.find((s) => s.meta.current) || seasons[0];
-    const inCurrent = new Set(current.table.map((r) => r.team.id));
+    await loadEurope();
+    // Dropdown: every club in a league phase this season, grouped by competition, alphabetical.
     const byName = (a, b) => (a.shortName || a.name).localeCompare(b.shortName || b.name);
-    const nowList = [...clubs.values()].filter((t) => inCurrent.has(t.id)).sort(byName);
-    const earlier = [...clubs.values()].filter((t) => !inCurrent.has(t.id)).sort(byName);
-    const opt = (t) => `<option value="${t.id}">${esc(t.shortName || t.name)}</option>`;
+    const groups = europe.seasons.filter((s) => s.meta.current).map((s) =>
+      `<optgroup label="${esc(s.comp.name)}">${s.table.map((r) => r.team).sort(byName)
+        .map((t) => `<option value="${t.id}">${esc(t.shortName || t.name)}</option>`).join("")}</optgroup>`);
     const select = $("#club-select");
-    select.innerHTML = `<optgroup label="${esc(current.meta.label)}">${nowList.map(opt).join("")}</optgroup>` +
-      (earlier.length ? `<optgroup label="Earlier seasons">${earlier.map(opt).join("")}</optgroup>` : "");
+    select.innerHTML = groups.join("");
 
+    // Requested club (link, or saved choice) -> the option that represents that club this season
     let saved = null;
-    // Older versions stored one club for everything under "club"; keep using it for the Champions League.
-    try { saved = localStorage.getItem(CLUB_KEY) ?? (COMP.key === "cl" ? localStorage.getItem("club") : null); } catch {}
-    const wanted = Number(new URLSearchParams(location.search).get("club") || saved);
-    const id = clubs.has(wanted) ? wanted : current.table[0]?.team.id;
+    try { saved = localStorage.getItem(CLUB_KEY) ?? localStorage.getItem(`club-${COMP.key}`); } catch {}
+    const wanted = europe.byId.get(Number(new URLSearchParams(location.search).get("club") || saved));
+    const options = [...select.options].map((o) => Number(o.value));
+    const id = (wanted && options.find((o) => wanted.ids.has(o))) || options[0];
     select.value = String(id);
     select.onchange = () => chooseClub(Number(select.value));
-    renderClub(id);
+    renderClub(wanted && !options.some((o) => wanted.ids.has(o)) ? [...wanted.ids][0] : id);
   } catch (err) {
     console.error(err);
     clubLoaded = false;
@@ -1348,7 +1380,7 @@ function clubHref(id) {
 function openClub(id) {
   history.pushState({ fromMatch: true }, "", clubHref(id));
   showView("club");
-  if (clubLoaded) {
+  if (clubLoaded && europe) {
     $("#club-select").value = String(id);
     chooseClub(id);
   }

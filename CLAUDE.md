@@ -34,6 +34,11 @@ Live: https://jerobrokaar.github.io/ChampionsLeague/ · Repo: https://github.com
 
 ## Competition differences
 
+The **Club tab is independent of the switch**: its dropdown lists every club in a league phase this season,
+grouped by competition; the page shows the club's current competition, recent seasons in any of the three,
+and a combined European record. Clubs are linked across competitions by name (`loadEurope`, `sameTeamName`),
+since football-data and UEFA ids differ. Matches clicked there open in their own competition.
+
 `COMPS` in app.js: CL/EL = 4 pots × 9, 8 games (home + away vs each pot); ECL = 6 pots × 6, 6 games
 (one opponent per pot, shown with an H/A marker). All competitions: 1–8 Round of 16, 9–24 knockout
 play-offs (9–16 seeded), 25–36 out. Switch via `?comp=el` / `?comp=ecl` (full page reload).
