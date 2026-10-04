@@ -208,7 +208,7 @@ function renderTable(rows, grid, status, results, preds) {
     const cells = grid[r.team.id] || {};
     return `<tr class="${zone(i + 1)}${cut}">
       <td class="pos sticky">${r.position}</td>
-      <td class="team sticky"><div class="team-cell">${crest(r.team.crest)}<span class="team-name">${esc(r.team.shortName || r.team.name)}</span>${status ? statusBadge(status.get(r.team.id)) : ""}</div></td>
+      <td class="team sticky"><div class="team-cell"><a class="team-link" href="${clubHref(r.team.id)}" data-club="${r.team.id}" title="Open club page">${crest(r.team.crest)}<span class="team-name">${esc(r.team.shortName || r.team.name)}</span></a>${status ? statusBadge(status.get(r.team.id)) : ""}</div></td>
       ${SLOTS.map((s) => opponentCell(cells[s], s)).join("")}
       <td class="pot-start">${r.playedGames}</td>
       <td>${r.won}</td>
@@ -1273,12 +1273,15 @@ function openClub(id) {
   }
 }
 
-$("#match-detail").addEventListener("click", (e) => {
+// Club links on the match page and in the table open the Club tab.
+function onClubLink(e) {
   const a = e.target.closest("[data-club]");
   if (!a || e.ctrlKey || e.metaKey || e.shiftKey || e.button !== 0) return; // let new-tab clicks through
   e.preventDefault();
   openClub(Number(a.dataset.club));
-});
+}
+$("#match-detail").addEventListener("click", onClubLink);
+$("#table-body").addEventListener("click", onClubLink);
 
 $("#match-back").addEventListener("click", () => {
   if (history.state?.fromList) history.back();

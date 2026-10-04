@@ -87,6 +87,8 @@ tr.cut td { border-bottom: 2px dashed var(--line); }
 .team-cell { display: flex; align-items: center; gap: 10px; min-width: 150px; }
 .crest { width: 22px; height: 22px; object-fit: contain; flex: none; }
 .team-name { font-weight: 600; white-space: nowrap; }
+.team-link { display: inline-flex; align-items: center; gap: 10px; color: inherit; text-decoration: none; min-width: 0; }
+.team-link:hover .team-name, .team-link:focus-visible .team-name { text-decoration: underline; text-underline-offset: 3px; }
 .standings .pts { font-weight: 800; }
 /* Goals are secondary to points and results */
 .standings td.goals { color: var(--muted); font-size: 13px; }
