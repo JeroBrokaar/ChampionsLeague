@@ -5,7 +5,7 @@ Hand-entered results, not used by the website yet.
 | File | Contents |
 |---|---|
 | `uefa-results-2024-25_2025-26.xlsx` | **Main file.** One tab per competition and season: Europa League 2024/25 and 2025/26, Conference League 2024/25 and 2025/26 (league phase, play-offs, Round of 16, quarter-finals, semi-finals, final), plus a Pots tab and a progress counter |
-| `2025-26.csv`, `2026-27.csv`, `pots.csv` | Earlier CSV sheets for the Europa League. 2025/26 is also in the Excel file - fill in one of the two, not both |
+| `2026-27.csv`, `pots.csv` | Europa League 2026/27 (current season) as a CSV sheet, and the Europa League pots |
 
 ## Filling in
 
