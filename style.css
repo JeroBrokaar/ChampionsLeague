@@ -221,6 +221,12 @@ body[data-view="sim"] .season-select { visibility: hidden; }
 body[data-view="club"] .season-select,
 body[data-view="match"] .season-select { visibility: hidden; }
 
+/* Home/draw/away chance bar under upcoming matches */
+.odds-bar { grid-column: 1 / -1; display: flex; gap: 2px; height: 4px; margin: 2px auto 0; width: min(100%, 260px); border-radius: 2px; overflow: hidden; }
+.odds-bar .home-win { background: var(--win); }
+.odds-bar .draw { background: var(--draw-cell); }
+.odds-bar .away-win { background: var(--loss); }
+
 /* Clickable match rows (Matches tab) */
 .match.clickable, .fixture-row.clickable, .next-match.clickable { cursor: pointer; }
 .fixture-row.clickable:hover, .fixture-row.clickable:focus-visible { background: var(--row-hover); outline: none; }

@@ -228,6 +228,8 @@ function renderTable(rows, grid, status, results, preds) {
 /* ---------- Matches ---------- */
 
 let rounds = [];
+// Home/draw/away chances for upcoming matches of the season on screen (from the simulation).
+let matchOddsById = new Map();
 
 function roundKey(m) {
   return m.stage === "LEAGUE_STAGE" ? `LEAGUE_STAGE:${m.matchday}` : m.stage;
@@ -277,6 +279,15 @@ function matchRow(m) {
     <div class="side home">${name(m.homeTeam, "HOME_TEAM")}${crest(m.homeTeam?.crest)}</div>
     ${scoreHtml}
     <div class="side away">${crest(m.awayTeam?.crest)}${name(m.awayTeam, "AWAY_TEAM")}</div>
+    ${oddsBar(matchOddsById.get(m.id))}
+  </div>`;
+}
+
+function oddsBar(o) {
+  if (!o) return "";
+  const title = `Home win ${pctText(o.h)} · Draw ${pctText(o.d)} · Away win ${pctText(o.a)}`;
+  return `<div class="odds-bar" title="${title}" aria-label="${title}">
+    <span class="home-win" style="flex:${o.h}"></span><span class="draw" style="flex:${o.d}"></span><span class="away-win" style="flex:${o.a}"></span>
   </div>`;
 }
 
@@ -397,6 +408,9 @@ async function loadSeason(id) {
   if (status && pots) {
     const result = await seasonSimulation(String(s));
     if (result?.sim) preds = new Map(result.sim.teams.map((t) => [t.team.id, t]));
+    matchOddsById = new Map((result?.sim?.games || []).map((g) => [g.m.id, g.o]));
+  } else {
+    matchOddsById = new Map();
   }
   $(".standings").classList.toggle("no-result", !results);
   $(".standings").classList.toggle("no-pred", !preds);
