@@ -45,7 +45,14 @@ body {
 h1 { margin: 0; font-size: clamp(22px, 5vw, 32px); font-weight: 800; letter-spacing: -.02em; }
 .sub { margin: 2px 0 0; color: #a1a1aa; font-size: 14px; }
 
-.tabs { display: flex; gap: 4px; margin-top: 22px; }
+/* Competition switch */
+.comp-switch { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-top: 18px; padding: 4px; background: rgba(255, 255, 255, .06); border: 1px solid rgba(255, 255, 255, .12); border-radius: 999px; }
+.comp-switch a { color: #a1a1aa; text-decoration: none; font-size: 13px; font-weight: 600; padding: 7px 14px; border-radius: 999px; white-space: nowrap; }
+.comp-switch a:hover { color: #fff; }
+.comp-switch a.active { color: #0b0b0c; background: var(--accent); }
+.comp-switch .short { display: none; }
+.opp-ha { font-size: 9px; font-weight: 700; color: var(--muted); margin-right: 1px; }
+.tabs { display: flex; gap: 4px; margin-top: 12px; }
 .tab {
   background: none; border: 0; color: #a1a1aa; cursor: pointer;
   font: inherit; font-weight: 600; font-size: 15px;
@@ -150,6 +157,9 @@ tr.cut td { border-bottom: 2px dashed var(--line); }
 .foot a { color: inherit; }
 
 @media (max-width: 600px) {
+  .comp-switch a { padding: 6px 12px; font-size: 13px; }
+  .comp-switch .long { display: none; }
+  .comp-switch .short { display: inline; }
   .tabs { overflow-x: auto; scrollbar-width: none; }
   .tab { padding: 12px 10px; font-size: 14px; white-space: nowrap; }
   .hide-sm { display: none; }

@@ -32,10 +32,16 @@ jobs:
         env:
           FOOTBALL_DATA_TOKEN: ${{ secrets.FOOTBALL_DATA_TOKEN }}
 
+      # Europa League and Conference League from UEFA's public match feeds. If UEFA is
+      # unreachable the Champions League still updates; those pages keep their last data.
+      - name: Fetch Europa League and Conference League data
+        continue-on-error: true
+        run: python3 scripts/fetch_uefa.py
+
       - name: Assemble site
         run: |
           mkdir _site
-          cp index.html style.css app.js pots.json finals.json _site/
+          cp index.html style.css app.js pots.json pots-el.json pots-ecl.json finals.json _site/
           cp -r data assets _site/
           # Cache-bust CSS/JS so browsers pick up new versions right away
           sed -i "s/style\.css\"/style.css?v=${GITHUB_SHA::7}\"/; s/app\.js\"/app.js?v=${GITHUB_SHA::7}\"/" _site/index.html

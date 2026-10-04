@@ -27,31 +27,47 @@ function crest(url) {
   return url ? `<img class="crest" src="${esc(url)}" alt="" loading="lazy">` : `<span class="crest"></span>`;
 }
 
+/* ---------- Competition (switch at the top: ?comp=el / ?comp=ecl) ---------- */
+
+const COMPS = {
+  cl: { key: "cl", name: "Champions League", base: "data", pots: "pots.json", potCount: 4, games: 8,
+        source: ["football-data.org", "https://www.football-data.org"] },
+  el: { key: "el", name: "Europa League", base: "data/el", pots: "pots-el.json", potCount: 4, games: 8,
+        source: ["UEFA", "https://www.uefa.com/uefaeuropaleague/"] },
+  ecl: { key: "ecl", name: "Conference League", base: "data/ecl", pots: "pots-ecl.json", potCount: 6, games: 6,
+         source: ["UEFA", "https://www.uefa.com/uefaconferenceleague/"] },
+};
+const COMP = COMPS[new URLSearchParams(location.search).get("comp")] || COMPS.cl;
+const POT_KEYS = Array.from({ length: COMP.potCount }, (_, i) => String(i + 1));
+// Champions/Europa League: two opponents per pot (home + away). Conference League: one per pot.
+const TWO_PER_POT = COMP.games / COMP.potCount === 2;
+const SLOTS = TWO_PER_POT ? POT_KEYS.flatMap((p) => [`${p}H`, `${p}A`]) : POT_KEYS;
+const TABLE_COLS = 2 + SLOTS.length + 8 + 3; // rank, team, pot slots, P..Pts, Top 8, Top 24, Result
+
 // Short codes where football-data's TLA is ambiguous or unclear.
 const ABBR = { 5: "BAY", 81: "BAR", 5721: "BOD" };
 const abbr = (t) => ABBR[t.id] || t.tla || (t.shortName || t.name).slice(0, 3).toUpperCase();
-const SLOTS = ["1H", "1A", "2H", "2A", "3H", "3A", "4H", "4A"];
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
 const shortDate = (iso) => { const d = new Date(iso); return `${d.getDate()} ${MONTHS[d.getMonth()]}`; };
 
-// teamId -> { "1H": match, "1A": match, ... } for the league phase.
+// teamId -> { "1H": match, "1A": match, ... } (or { "1": match, ... } with one opponent per pot).
 function buildOpponentGrid(matches, pots) {
   const potOf = {};
   for (const [pot, ids] of Object.entries(pots)) if (Array.isArray(ids)) ids.forEach((id) => (potOf[id] = pot));
   const grid = {};
   for (const m of matches) {
     if (m.stage !== "LEAGUE_STAGE" || !m.homeTeam?.id || !m.awayTeam?.id) continue;
-    (grid[m.homeTeam.id] ??= {})[`${potOf[m.awayTeam.id]}H`] = m;
-    (grid[m.awayTeam.id] ??= {})[`${potOf[m.homeTeam.id]}A`] = m;
+    (grid[m.homeTeam.id] ??= {})[`${potOf[m.awayTeam.id]}${TWO_PER_POT ? "H" : ""}`] = m;
+    (grid[m.awayTeam.id] ??= {})[`${potOf[m.homeTeam.id]}${TWO_PER_POT ? "A" : ""}`] = m;
   }
   return grid;
 }
 
-function opponentCell(m, slot) {
-  const start = slot.endsWith("H") ? " pot-start" : "";
+function opponentCell(m, slot, teamId) {
+  const start = !TWO_PER_POT || slot.endsWith("H") ? " pot-start" : "";
   if (!m) return `<td class="opp-cell${start}"></td>`;
-  const home = slot.endsWith("H");
+  const home = m.homeTeam.id === teamId;
   const opp = home ? m.awayTeam : m.homeTeam;
   const ft = m.score?.fullTime ?? {};
   const live = LIVE.has(m.status);
@@ -71,7 +87,7 @@ function opponentCell(m, slot) {
   const title = `${home ? "vs" : "at"} ${opp.name} · ${label}${m.status === "FINISHED" || live ? ` · ${date}` : ""}`;
   return `<td class="opp-cell${start}" title="${esc(title)}">
     <div class="opp">
-      <span class="opp-team">${crest(opp.crest)}<span>${esc(abbr(opp))}</span></span>
+      <span class="opp-team">${TWO_PER_POT ? "" : `<small class="opp-ha">${home ? "H" : "A"}</small>`}${crest(opp.crest)}<span>${esc(abbr(opp))}</span></span>
       ${res}
     </div>
   </td>`;
@@ -79,7 +95,7 @@ function opponentCell(m, slot) {
 
 /* ---------- Through / out ---------- */
 
-const LEAGUE_GAMES = 8;
+const LEAGUE_GAMES = COMP.games;
 const STATUS = {
   r16: { label: "R16 ✓", title: "Round of 16 secured", cls: "z1" },
   top24: { label: "Top 24 ✓", title: "At least the play-offs secured", cls: "z2" },
@@ -198,7 +214,7 @@ function predCells(pred) {
 function renderTable(rows, grid, status, results, preds) {
   const body = $("#table-body");
   if (!rows.length) {
-    body.innerHTML = `<tr><td colspan="21" class="empty">No standings yet.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="${TABLE_COLS}" class="empty">No standings yet.</td></tr>`;
     return;
   }
   body.innerHTML = rows.map((r, i) => {
@@ -209,7 +225,7 @@ function renderTable(rows, grid, status, results, preds) {
     return `<tr class="${zone(i + 1)}${cut}">
       <td class="pos sticky">${r.position}</td>
       <td class="team sticky"><div class="team-cell"><a class="team-link" href="${clubHref(r.team.id)}" data-club="${r.team.id}" title="Open club page">${crest(r.team.crest)}<span class="team-name">${esc(r.team.shortName || r.team.name)}</span></a>${status ? statusBadge(status.get(r.team.id)) : ""}</div></td>
-      ${SLOTS.map((s) => opponentCell(cells[s], s)).join("")}
+      ${SLOTS.map((s) => opponentCell(cells[s], s, r.team.id)).join("")}
       <td class="pot-start">${r.playedGames}</td>
       <td>${r.won}</td>
       <td>${r.draw}</td>
@@ -382,7 +398,7 @@ function removeShootouts(data) {
 
 // Club badges that differ from football-data's (team id -> image in assets/crests).
 // Ajax: the classic crest (1928-1991) is the club's official logo again since 2025/26.
-const CREST_OVERRIDES = { 678: "assets/crests/ajax.png" };
+const CREST_OVERRIDES = { 678: "assets/crests/ajax.png", 1050143: "assets/crests/ajax.png" }; // football-data and UEFA ids
 
 function applyCrests(teams) {
   for (const t of teams) if (t && CREST_OVERRIDES[t.id]) t.crest = CREST_OVERRIDES[t.id];
@@ -390,7 +406,7 @@ function applyCrests(teams) {
 
 const seasonCache = new Map();
 function fetchSeason(id) {
-  const base = id ? `data/${id}` : "data";
+  const base = id ? `${COMP.base}/${id}` : COMP.base;
   if (!seasonCache.has(base)) {
     seasonCache.set(base, Promise.all([
       loadJson(`${base}/standings.json`),
@@ -454,7 +470,7 @@ function setupSeasonPicker(seasons) {
 function showError(err) {
   console.error(err);
   $("#table-body").innerHTML =
-    `<tr><td colspan="21" class="empty">No data yet. It appears after the GitHub Action has run once.</td></tr>`;
+    `<tr><td colspan="${TABLE_COLS}" class="empty">No data yet. It appears after the GitHub Action has run once.</td></tr>`;
   $("#match-list").innerHTML = `<div class="card empty">No data yet.</div>`;
 }
 
@@ -723,15 +739,34 @@ async function loadClubData() {
 // "2024" for season "2023/24": finals are usually referred to by the year they were played.
 const finalYear = (season) => String(Number(season.slice(0, 4)) + 1);
 
+// Club name for comparing across sources (finals list vs UEFA's names, e.g. "Man Utd").
+const CLUB_ALIASES = { "man utd": "manchester united", "man city": "manchester city", "nott m forest": "nottingham forest",
+  "paris": "paris saint germain", "psg": "paris saint germain", "atleti": "atletico madrid", "spurs": "tottenham hotspur",
+  "tottenham": "tottenham hotspur", "bayern": "bayern munich", "inter": "inter milan", "crvena zvezda": "red star belgrade",
+  "leverkusen": "bayer leverkusen", "stuttgart": "vfb stuttgart", "frankfurt": "eintracht frankfurt", "salzburg": "austria salzburg" }; // finals list uses the 1994 name
+function clubKey(name) {
+  let s = (name || "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+  s = CLUB_ALIASES[s] || s;
+  return s.replace(/\b(fc|cf|ac|afc|sc|sk|fk|club|de|the|ssc|as|ss|kv|1)\b/g, " ").replace(/\s+/g, " ").trim();
+}
+// Finals are stored with football-data ids; clubs from UEFA's data are matched by name.
+function sameClub(entry, team) {
+  if (entry.id === team.id) return true;
+  if (team.id < 1000000) return false;
+  const a = clubKey(entry.name), b = clubKey(team.name);
+  // Equal, or one is the start of the other ("ajax" ~ "ajax amsterdam"); never in the middle ("milan" vs "inter milan").
+  return a === b || (a.startsWith(`${b} `) && b.length >= 4) || (b.startsWith(`${a} `) && a.length >= 4);
+}
+
 // Titles first (one line per cup), then lost finals (one line per cup).
-function honoursHtml(id, competitions) {
+function honoursHtml(team, competitions) {
   const years = (list, key) => list.map((f) => {
     const other = key === "winner" ? f.runnerUp.name : f.winner.name;
     return `<span class="final-year" title="${esc(f.season)} final: ${key === "winner" ? "beat" : "lost to"} ${esc(other)}">${finalYear(f.season)}</span>`;
   }).join("");
   const group = (cls, heading, key) => {
     const lines = competitions.map((c) => {
-      const list = c.finals.filter((f) => f[key].id === id);
+      const list = c.finals.filter((f) => sameClub(f[key], team));
       return list.length ? `<div class="honour ${cls}">
           <div class="honour-head"><b>${list.length}×</b><span>${esc(c.title)}</span></div>
           <div class="final-years">${years(list, key)}</div>
@@ -841,7 +876,7 @@ function renderClub(id) {
         ${result ? `<div class="club-result">Result: <span class="result ${RESULT[result.get(id) || "LEAGUE"].cls}">${RESULT[result.get(id) || "LEAGUE"].label}</span></div>` : ""}
       </div>`;
   } else {
-    nowHtml = `<p class="empty-note">${esc(team.shortName || team.name)} is not in the ${esc(current.meta.label)} Champions League.</p>`;
+    nowHtml = `<p class="empty-note">${esc(team.shortName || team.name)} is not in the ${esc(current.meta.label)} ${COMP.name}.</p>`;
   }
 
   // Upcoming fixtures
@@ -884,7 +919,7 @@ function renderClub(id) {
     const key = res ? res.get(id) || "LEAGUE" : null;
     return `<div class="past-row">
       <span class="past-season">${esc(s.meta.label)}</span>
-      <span class="cl-icon" title="Played in the Champions League" aria-label="Played in the Champions League">★</span>
+      <span class="cl-icon" title="Played in the ${COMP.name}" aria-label="Played in the ${COMP.name}">★</span>
       <span class="pchip ${posZone(i + 1)}">${i + 1}</span>
       <span class="past-pts">${s.table[i].points} pts</span>
       ${key ? `<span class="result ${RESULT[key].cls}">${RESULT[key].label}</span>` : ""}
@@ -909,14 +944,14 @@ function renderClub(id) {
     </div>
     <div class="card stat-card">
       <h2>Previous seasons</h2>
-      ${honoursHtml(id, clubData.competitions)}
+      ${honoursHtml(team, clubData.competitions)}
       <h3 class="sub-head">Recent seasons</h3>
       <p class="hint">League-phase position and how far the club got.</p>
       ${pastHtml || `<p class="empty-note">No earlier seasons in this format.</p>`}
     </div>
     <div class="card stat-card wide">
       <h2>Record in this format</h2>
-      <p class="hint">All Champions League matches since ${esc(first)}, when the 36-team league phase started.
+      <p class="hint">All ${COMP.name} matches since ${esc(first)}, when the 36-team league phase started.
         The final is played at a neutral venue. Penalty shoot-outs count as draws.</p>
       ${rec.total.p ? recordTableHtml(rec) : `<p class="empty-note">No matches played yet.</p>`}
     </div>`;
@@ -965,7 +1000,7 @@ async function loadClub() {
 const longDate = (iso) => { const d = new Date(iso); return `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`; };
 const tname = (t) => esc(t.shortName || t.name);
 
-// A team's finished Champions League matches before `before`, newest first.
+// A team's finished matches in this competition before `before`, newest first.
 function teamHistory(id, seasons, before) {
   const out = [];
   for (const s of seasons) {
@@ -1169,9 +1204,9 @@ async function renderMatch(id) {
     (x.homeTeam?.id === team.id || x.awayTeam?.id === team.id));
   const debut = (team, venue) => {
     const prev = earlier(team);
-    if (!prev.length) return `This is ${tname(team)}'s first Champions League match in this format.`;
+    if (!prev.length) return `This is ${tname(team)}'s first ${COMP.name} match in this format.`;
     const atVenue = prev.filter((x) => x.stage !== "FINAL" && (x.homeTeam?.id === team.id) === (venue === "home"));
-    return atVenue.length ? "" : `This is ${tname(team)}'s first Champions League ${venue} game in this format.`;
+    return atVenue.length ? "" : `This is ${tname(team)}'s first ${COMP.name} ${venue} game in this format.`;
   };
   const debutFacts = [[H, debut(H, "home")], [A, debut(A, "away")]].filter(([, text]) => text).map(([team, text]) => ({ team, text }));
   const h2hHtml = meetings.length
@@ -1185,7 +1220,7 @@ async function renderMatch(id) {
         <span class="h2h-teams">${tname(g.m.homeTeam)} <b>${g.m.score.fullTime.home}–${g.m.score.fullTime.away}</b> ${tname(g.m.awayTeam)}${g.m.score.pens ? ` <small class="muted">(pens ${g.m.score.pens.home}–${g.m.score.pens.away})</small>` : ""}</span>
         <span class="fx-extra">${esc(stageLabel(g.m))}</span>
       </div>`).join("")}</div></div>`
-    : `<p class="empty-note">${tname(H)} and ${tname(A)} haven't met in the Champions League since ${esc(seasons[seasons.length - 1].meta.label)}. This is their first meeting in this format.</p>`;
+    : `<p class="empty-note">${tname(H)} and ${tname(A)} haven't met in the ${COMP.name} since ${esc(seasons[seasons.length - 1].meta.label)}. This is their first meeting in this format.</p>`;
 
   const hHome = hHist.filter((g) => g.home && !g.final), aAway = aHist.filter((g) => !g.home && !g.final);
   const thisSeason = (g) => g.m.utcDate >= (season.matches.map((x) => x.utcDate).sort()[0] || "");
@@ -1211,7 +1246,7 @@ async function renderMatch(id) {
     </div>
     <div class="card stat-card wide">
       <h2>Talking points</h2>
-      <p class="hint">${played ? "Going into this match" : "Going into the match"}, based on Champions League matches since ${esc(seasons[seasons.length - 1].meta.label)}.
+      <p class="hint">${played ? "Going into this match" : "Going into the match"}, based on ${COMP.name} matches since ${esc(seasons[seasons.length - 1].meta.label)}.
         A top-8 team is one in the top 8 of that season's league table.</p>
       ${facts.length ? `<ul class="facts">${facts.map((f) => `<li>${crest(f.team.crest)}<span>${f.text}</span></li>`).join("")}</ul>`
         : `<p class="empty-note">Nothing remarkable yet.</p>`}
@@ -1311,7 +1346,7 @@ function seasonStats(meta, standings, matches) {
   const posOf = new Map(table.map((r, i) => [r.team.id, { pos: i + 1, team: r.team }]));
   const pots = allPots[meta.id];
   const potPositions = pots
-    ? ["1", "2", "3", "4"].map((k) => (pots[k] || []).map((id) => posOf.get(id)).filter(Boolean).sort((a, b) => a.pos - b.pos))
+    ? POT_KEYS.map((k) => (pots[k] || []).map((id) => posOf.get(id)).filter(Boolean).sort((a, b) => a.pos - b.pos))
     : null;
   return {
     meta, complete, played: finished.length, home, draw, away,
@@ -1424,7 +1459,7 @@ function wireKnockout(stats) {
   }));
 }
 
-const THROUGH_OUT_FROM = 5; // games every team must have played before the card shows
+const THROUGH_OUT_FROM = Math.round(COMP.games * 0.625); // games played before the card shows (5 of 8, 4 of 6)
 
 function throughOutCard(stats) {
   const s = stats.find((x) => x.status && x.played);
@@ -1553,7 +1588,7 @@ function potVsPot(finished, pots) {
   const potOf = {};
   for (const [pot, ids] of Object.entries(pots)) if (Array.isArray(ids)) ids.forEach((id) => (potOf[id] = pot));
   const grid = {};
-  for (const r of "1234") { grid[r] = {}; for (const c of "1234") grid[r][c] = { w: 0, d: 0, l: 0 }; }
+  for (const r of POT_KEYS) { grid[r] = {}; for (const c of POT_KEYS) grid[r][c] = { w: 0, d: 0, l: 0 }; }
   for (const m of finished) {
     const hp = potOf[m.homeTeam.id], ap = potOf[m.awayTeam.id];
     if (!hp || !ap) continue;
@@ -1568,9 +1603,9 @@ function potVsPot(finished, pots) {
 
 function sumPotVsPot(grids) {
   const out = {};
-  for (const r of "1234") {
+  for (const r of POT_KEYS) {
     out[r] = {};
-    for (const c of "1234") {
+    for (const c of POT_KEYS) {
       out[r][c] = { w: 0, d: 0, l: 0 };
       for (const g of grids) for (const k of "wdl") out[r][c][k] += g[r][c][k];
     }
@@ -1593,8 +1628,8 @@ function potMatrixHtml(grid) {
     </td>`;
   };
   return `<table class="pvp">
-    <thead><tr><th class="corner">vs →</th>${"1234".split("").map((c) => `<th>Pot ${c}</th>`).join("")}</tr></thead>
-    <tbody>${"1234".split("").map((r) => `<tr><th>Pot ${r}</th>${"1234".split("").map((c) => cell(grid[r][c], r === c)).join("")}</tr>`).join("")}</tbody>
+    <thead><tr><th class="corner">vs →</th>${POT_KEYS.map((c) => `<th>Pot ${c}</th>`).join("")}</tr></thead>
+    <tbody>${POT_KEYS.map((r) => `<tr><th>Pot ${r}</th>${POT_KEYS.map((c) => cell(grid[r][c], r === c)).join("")}</tr>`).join("")}</tbody>
   </table>`;
 }
 
@@ -1711,13 +1746,47 @@ async function loadStats() {
   }
 }
 
+/* ---------- Competition switch and per-competition page chrome ---------- */
+
+function compHref(key) {
+  // Switching competition starts fresh: season and club belong to the previous competition.
+  const params = new URLSearchParams(location.search);
+  params.delete("season");
+  params.delete("club");
+  if (key === "cl") params.delete("comp"); else params.set("comp", key);
+  const qs = params.toString();
+  const hash = location.hash.startsWith("#match-") ? "#matches" : location.hash;
+  return `${location.pathname}${qs ? `?${qs}` : ""}${hash}`;
+}
+
+function setupCompetition() {
+  $("#comp-switch").innerHTML = Object.values(COMPS).map((c) =>
+    `<a href="${compHref(c.key)}" data-comp="${c.key}" class="${c === COMP ? "active" : ""}"${c === COMP ? ' aria-current="page"' : ""}>` +
+    `<span class="long">${esc(c.name)}</span><span class="short">${esc(c.name.split(" ")[0])}</span></a>`).join("");
+  $("#comp-switch").addEventListener("click", (e) => {
+    const a = e.target.closest("a");
+    if (a) a.href = compHref(a.dataset.comp); // recomputed on click, so the current tab is kept
+  });
+  $("#comp-title").textContent = COMP.name;
+  document.title = `${COMP.name} Standings`;
+  const [srcName, srcUrl] = COMP.source;
+  $("#data-source").innerHTML = `Data: <a href="${srcUrl}" target="_blank" rel="noopener">${esc(srcName)}</a>`;
+  // Table header: one column per pot (Conference League) or a home + away column per pot.
+  $("#pot-heads").outerHTML = POT_KEYS.map((k) =>
+    `<th class="pot-head pot-start" colspan="${TWO_PER_POT ? 2 : 1}">Pot ${k}</th>`).join("");
+  $("#ha-row").innerHTML = POT_KEYS.map(() => TWO_PER_POT
+    ? `<th class="pot-start" title="Home">H</th><th title="Away">A</th>`
+    : `<th class="pot-start" title="Opponent from this pot, home (H) or away (A)">Opp.</th>`).join("");
+}
+setupCompetition();
+
 /* ---------- Boot ---------- */
 
 (async function init() {
   try {
-    allPots = (await loadJson("pots.json").catch(() => ({ seasons: {} }))).seasons || {};
+    allPots = (await loadJson(COMP.pots).catch(() => ({ seasons: {} }))).seasons || {};
     // Older deploys only have data/standings.json; fall back to that.
-    const index = await loadJson("data/seasons.json").catch(() => null);
+    const index = await loadJson(`${COMP.base}/seasons.json`).catch(() => null);
     seasonIndex = index?.seasons || [];
     const id = seasonIndex.length ? setupSeasonPicker(seasonIndex) : null;
     const startView = location.hash.slice(1);

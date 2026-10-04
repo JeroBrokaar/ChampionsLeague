@@ -17,11 +17,12 @@
       <div class="brand">
         <span class="star" aria-hidden="true">★</span>
         <div>
-          <h1>Champions League</h1>
+          <h1 id="comp-title">Champions League</h1>
           <p class="sub" id="season">Standings &amp; fixtures</p>
         </div>
         <select id="season-select" class="season-select" aria-label="Season" hidden></select>
       </div>
+      <nav id="comp-switch" class="comp-switch" aria-label="Competition"></nav>
       <nav class="tabs" role="tablist">
         <button role="tab" class="tab active" data-view="table" aria-selected="true">Table</button>
         <button role="tab" class="tab" data-view="matches" aria-selected="false">Matches</button>
@@ -41,10 +42,7 @@
               <tr>
                 <th class="pos sticky" rowspan="2">#</th>
                 <th class="team sticky" rowspan="2">Team</th>
-                <th class="pot-head pot-start" colspan="2">Pot 1</th>
-                <th class="pot-head pot-start" colspan="2">Pot 2</th>
-                <th class="pot-head pot-start" colspan="2">Pot 3</th>
-                <th class="pot-head pot-start" colspan="2">Pot 4</th>
+                <th class="pot-head pot-start" colspan="8" id="pot-heads">Pots</th>
                 <th class="pot-start" rowspan="2" title="Played">P</th>
                 <th rowspan="2" title="Won">W</th>
                 <th rowspan="2" title="Drawn">D</th>
@@ -57,12 +55,7 @@
                 <th class="pred-col" rowspan="2" title="Estimated chance of finishing in the top 24 (at least the play-offs)">Top 24</th>
                 <th class="result-col" rowspan="2" title="How far the team got in the competition">Result</th>
               </tr>
-              <tr class="ha-row">
-                <th class="pot-start" title="Home">H</th><th title="Away">A</th>
-                <th class="pot-start" title="Home">H</th><th title="Away">A</th>
-                <th class="pot-start" title="Home">H</th><th title="Away">A</th>
-                <th class="pot-start" title="Home">H</th><th title="Away">A</th>
-              </tr>
+              <tr class="ha-row" id="ha-row"></tr>
             </thead>
             <tbody id="table-body">
               <tr><td colspan="21" class="empty">Loading…</td></tr>
@@ -109,7 +102,7 @@
 
   <footer class="wrap foot">
     <span id="updated"></span>
-    <span>Data: <a href="https://www.football-data.org" target="_blank" rel="noopener">football-data.org</a></span>
+    <span id="data-source">Data: <a href="https://www.football-data.org" target="_blank" rel="noopener">football-data.org</a></span>
   </footer>
 
   <script src="app.js"></script>

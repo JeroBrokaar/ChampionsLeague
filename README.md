@@ -1,5 +1,10 @@
 # Champions League Standings
 
+Covers the **Champions League**, **Europa League** and **Conference League** (switch at the top of the page).
+Champions League data comes from football-data.org; Europa League and Conference League data from UEFA's
+public match feeds (`scripts/fetch_uefa.py`), with league-phase pots in `pots-el.json` / `pots-ecl.json`
+(rebuilt with `scripts/uefa_pots.py` after each draw).
+
 A static website showing the Champions League league-phase table, results and fixtures.
 Data comes from [football-data.org](https://www.football-data.org) (free tier) and is refreshed by a GitHub Action, which then deploys the site to GitHub Pages.
 
