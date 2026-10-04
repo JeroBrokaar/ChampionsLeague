@@ -1161,7 +1161,8 @@ function teamFacts(team, hist, venue, oppCountry, countryOf, oppTop8) {
   }
 
   // No draws at all in this format (penalty shoot-outs count as draws)
-  if (hist.length >= 10 && hist.every((g) => g.res !== "D")) {
+  // At least one full league phase (8 games, 6 in the Conference League) without a single draw.
+  if (hist.length >= COMP.games && hist.every((g) => g.res !== "D")) {
     add("draws", hist.length / 4, `Every one of ${name}'s ${hist.length} matches in this format had a winner: no draws.`);
   }
 
