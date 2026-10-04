@@ -36,7 +36,7 @@ jobs:
         run: |
           mkdir _site
           cp index.html style.css app.js pots.json finals.json _site/
-          cp -r data _site/
+          cp -r data assets _site/
           # Cache-bust CSS/JS so browsers pick up new versions right away
           sed -i "s/style\.css\"/style.css?v=${GITHUB_SHA::7}\"/; s/app\.js\"/app.js?v=${GITHUB_SHA::7}\"/" _site/index.html
 

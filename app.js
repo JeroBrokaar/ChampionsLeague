@@ -380,6 +380,14 @@ function removeShootouts(data) {
   return data;
 }
 
+// Club badges that differ from football-data's (team id -> image in assets/crests).
+// Ajax: the classic crest (1928-1991) is the club's official logo again since 2025/26.
+const CREST_OVERRIDES = { 678: "assets/crests/ajax.png" };
+
+function applyCrests(teams) {
+  for (const t of teams) if (t && CREST_OVERRIDES[t.id]) t.crest = CREST_OVERRIDES[t.id];
+}
+
 const seasonCache = new Map();
 function fetchSeason(id) {
   const base = id ? `data/${id}` : "data";
@@ -388,7 +396,12 @@ function fetchSeason(id) {
       loadJson(`${base}/standings.json`),
       loadJson(`${base}/matches.json`).then(removeShootouts).catch(() => ({ matches: [] })),
       loadJson(`${base}/teams.json`).catch(() => ({ teams: [] })),
-    ]));
+    ]).then((data) => {
+      const [standings, matches] = data;
+      applyCrests((standings.table || []).map((r) => r.team));
+      applyCrests((matches.matches || []).flatMap((m) => [m.homeTeam, m.awayTeam]));
+      return data;
+    }));
   }
   return seasonCache.get(base);
 }
