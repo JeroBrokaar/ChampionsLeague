@@ -1114,18 +1114,18 @@ const ofShort = (r, n) => ([r.w, r.d, r.l].filter(Boolean).length === 1 ? `${r.w
 function groupFact(name, games, label, topic) {
   if (games.length < 3) return null;
   const r = recordOf(games);
-  if (r.l === 0) return { topic, score: games.length + 1, text: `${name} are unbeaten against ${label} in this format (${ofShort(r, games.length)}).` };
-  if (r.w === 0) return { topic, score: games.length + 1, text: `${name} ${ofText(r, games.length, `games against ${label}`)} in this format.` };
+  if (r.l === 0) return { topic, trend: "up", score: games.length + 1, text: `${name} are unbeaten against ${label} in this format (${ofShort(r, games.length)}).` };
+  if (r.w === 0) return { topic, trend: "down", score: games.length + 1, text: `${name} ${ofText(r, games.length, `games against ${label}`)} in this format.` };
   const lastLoss = games.find((g) => g.res === "L"), sinceLoss = games.indexOf(lastLoss);
-  if (sinceLoss >= 3) return { topic, score: sinceLoss + 1, text: `${name} are unbeaten in their last ${sinceLoss} games against ${label} (last defeat: ${longDate(lastLoss.m.utcDate)}).` };
+  if (sinceLoss >= 3) return { topic, trend: "up", score: sinceLoss + 1, text: `${name} are unbeaten in their last ${sinceLoss} games against ${label} (last defeat: ${longDate(lastLoss.m.utcDate)}).` };
   const lastWin = games.find((g) => g.res === "W"), sinceWin = games.indexOf(lastWin);
-  if (sinceWin >= 3) return { topic, score: sinceWin, text: `${name} ${ofText(recordOf(games.slice(0, sinceWin)), sinceWin, `games against ${label}`, true)} (last win: ${longDate(lastWin.m.utcDate)}).` };
+  if (sinceWin >= 3) return { topic, trend: "down", score: sinceWin, text: `${name} ${ofText(recordOf(games.slice(0, sinceWin)), sinceWin, `games against ${label}`, true)} (last win: ${longDate(lastWin.m.utcDate)}).` };
   return null;
 }
 
 // Interesting facts about one team going into the match: at most one per topic,
 // phrased positively ("lost their last 3", not "haven't won"), most notable first.
-function teamFacts(team, hist, venue, oppCountry, countryOf) {
+function teamFacts(team, hist, venue, oppCountry, countryOf, oppTop8) {
   const name = tname(team);
   if (!hist.length) return []; // debut: added separately at the top of the talking points
   const facts = [];
@@ -1152,7 +1152,8 @@ function teamFacts(team, hist, venue, oppCountry, countryOf) {
   }
 
   // Against top-8 teams and against clubs from the opponent's country
-  const top8 = groupFact(name, hist.filter((g) => g.oppTop8), "top-8 teams", "top8");
+  // Only relevant when this match is against a top-8 team.
+  const top8 = oppTop8 ? groupFact(name, hist.filter((g) => g.oppTop8), "top-8 teams", "top8") : null;
   if (top8) facts.push(top8);
   if (oppCountry && countryOf) {
     const c = groupFact(name, hist.filter((g) => countryOf.get(g.opp.id) === oppCountry), `teams from ${oppCountry}`, "country");
@@ -1170,8 +1171,11 @@ function teamFacts(team, hist, venue, oppCountry, countryOf) {
   else if (blank >= 2) add("goals", blank + 1, `${name} failed to score in their last ${blank} matches.`);
   if (clean >= 3) add("defence", clean + 1, `${name} kept a clean sheet in their last ${clean} matches.`);
 
+  // A winless/unbeaten record against a group says the same as a current losing/winning run.
+  const repeatsRun = (f) => run && f.trend && ((run.type === "L" && f.trend === "down") || (run.type === "W" && f.trend === "up"));
   const seen = new Set();
-  return facts.sort((a, b) => b.score - a.score).filter((f) => !seen.has(f.topic) && seen.add(f.topic)).slice(0, 3);
+  return facts.filter((f) => !repeatsRun(f)).sort((a, b) => b.score - a.score)
+    .filter((f) => !seen.has(f.topic) && seen.add(f.topic)).slice(0, 3);
 }
 
 // Last 5 results, oldest first, grouped by season ("25/26 | 26/27").
@@ -1264,8 +1268,9 @@ async function renderMatch(id) {
 
   const hHome = hHist.filter((g) => g.home && !g.final), aAway = aHist.filter((g) => !g.home && !g.final);
   const thisSeason = (g) => g.m.utcDate >= (season.matches.map((x) => x.utcDate).sort()[0] || "");
-  const facts = [...teamFacts(H, hHist, "home", countryOf.get(A.id), countryOf).map((f) => ({ ...f, team: H })),
-    ...teamFacts(A, aHist, "away", countryOf.get(H.id), countryOf).map((f) => ({ ...f, team: A }))]
+  const isTop8 = (t) => (posOf.get(t.id) || 99) <= 8;
+  const facts = [...teamFacts(H, hHist, "home", countryOf.get(A.id), countryOf, isTop8(A)).map((f) => ({ ...f, team: H })),
+    ...teamFacts(A, aHist, "away", countryOf.get(H.id), countryOf, isTop8(H)).map((f) => ({ ...f, team: A }))]
     .sort((a, b) => b.score - a.score);
   facts.unshift(...debutFacts);
 
