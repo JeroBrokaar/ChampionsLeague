@@ -657,9 +657,10 @@ function stageLabel(m) {
   return m.stage === "LEAGUE_STAGE" ? `Matchday ${m.matchday}` : STAGE_LABELS[m.stage] || m.stage;
 }
 
+// Record split into league phase (home/away) and knockout phase (home/away/final at a neutral venue).
 function clubRecord(id, seasons) {
   const blank = () => ({ p: 0, w: 0, d: 0, l: 0, gf: 0, ga: 0 });
-  const rec = { home: blank(), away: blank(), neutral: blank() };
+  const rec = { league: { home: blank(), away: blank() }, ko: { home: blank(), away: blank(), final: blank() } };
   for (const s of seasons) {
     for (const m of s.matches) {
       if (m.status !== "FINISHED") continue;
@@ -667,24 +668,36 @@ function clubRecord(id, seasons) {
       if (!home && m.awayTeam?.id !== id) continue;
       const { home: h, away: a } = m.score.fullTime;
       const gf = home ? h : a, ga = home ? a : h;
-      const r = m.stage === "FINAL" ? rec.neutral : home ? rec.home : rec.away;
+      const phase = m.stage === "LEAGUE_STAGE" ? rec.league : rec.ko;
+      const r = m.stage === "FINAL" ? phase.final : home ? phase.home : phase.away;
       r.p++; r.gf += gf; r.ga += ga;
       if (gf > ga) r.w++; else if (gf < ga) r.l++; else r.d++;
     }
   }
-  rec.total = blank();
-  for (const k of ["home", "away", "neutral"]) for (const f of Object.keys(rec.total)) rec.total[f] += rec[k][f];
+  const sum = (...parts) => parts.reduce((t, r) => { for (const f of Object.keys(t)) t[f] += r[f]; return t; }, blank());
+  rec.league.total = sum(rec.league.home, rec.league.away);
+  rec.ko.total = sum(rec.ko.home, rec.ko.away, rec.ko.final);
+  rec.total = sum(rec.league.total, rec.ko.total);
   return rec;
 }
 
 function recordTableHtml(rec) {
-  const rows = [["Home", rec.home], ["Away", rec.away], ...(rec.neutral.p ? [["Final (neutral)", rec.neutral]] : []), ["Total", rec.total]];
-  return `<table class="mini club-record">
-    <thead><tr><th></th><th>P</th><th>W</th><th>D</th><th>L</th><th>GF</th><th>GA</th><th>GD</th><th>Win %</th></tr></thead>
-    <tbody>${rows.map(([label, r]) => `<tr class="${label === "Total" ? "total" : ""}">
+  const line = (label, r, cls = "") => `<tr class="${cls}">
       <td class="season-cell">${label}</td><td>${r.p}</td><td>${r.w}</td><td>${r.d}</td><td>${r.l}</td>
-      <td>${r.gf}</td><td>${r.ga}</td><td>${signed(r.gf - r.ga)}</td><td><b>${r.p ? pctText(r.w / r.p) : "–"}</b></td>
-    </tr>`).join("")}</tbody>
+      <td>${r.gf}</td><td>${r.ga}</td><td>${signed(r.gf - r.ga)}</td>
+    </tr>`;
+  const group = (title) => `<tr class="group"><td colspan="8">${title}</td></tr>`;
+  const ko = rec.ko.total.p
+    ? group("Knockout phase") + line("Home", rec.ko.home) + line("Away", rec.ko.away) +
+      (rec.ko.final.p ? line("Final", rec.ko.final) : "") + line("Total", rec.ko.total, "subtotal")
+    : group("Knockout phase") + `<tr><td colspan="8" class="muted">No knockout matches yet.</td></tr>`;
+  return `<table class="mini club-record">
+    <thead><tr><th></th><th>P</th><th>W</th><th>D</th><th>L</th><th>GF</th><th>GA</th><th>GD</th></tr></thead>
+    <tbody>
+      ${group("League phase")}${line("Home", rec.league.home)}${line("Away", rec.league.away)}${line("Total", rec.league.total, "subtotal")}
+      ${ko}
+      ${line("All matches", rec.total, "total")}
+    </tbody>
   </table>`;
 }
 
@@ -812,8 +825,8 @@ function renderClub(id) {
     </div>
     <div class="card stat-card wide">
       <h2>Record in this format</h2>
-      <p class="hint">All Champions League matches since ${esc(first)}, when the 36-team league phase started, including knockouts.
-        Penalty shoot-outs count as draws.</p>
+      <p class="hint">All Champions League matches since ${esc(first)}, when the 36-team league phase started.
+        The final is played at a neutral venue. Penalty shoot-outs count as draws.</p>
       ${rec.total.p ? recordTableHtml(rec) : `<p class="empty-note">No matches played yet.</p>`}
     </div>`;
 }
