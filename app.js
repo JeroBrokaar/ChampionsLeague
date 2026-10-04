@@ -811,11 +811,10 @@ function renderClub(id) {
       ${nowHtml}
     </div>
     <div class="card stat-card">
-      <h2>Results this season</h2>
+      <h2>Matches this season</h2>
+      <h3 class="sub-head first">Results</h3>
       ${resultsHtml}
-    </div>
-    <div class="card stat-card">
-      <h2>Next match</h2>
+      <h3 class="sub-head">Next match</h3>
       ${nextHtml}
     </div>
     <div class="card stat-card">
