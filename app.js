@@ -710,7 +710,7 @@ const finalYear = (season) => String(Number(season.slice(0, 4)) + 1);
 function honoursHtml(id, finals) {
   const won = finals.filter((f) => f.winner.id === id);
   const lost = finals.filter((f) => f.runnerUp.id === id);
-  if (!won.length && !lost.length) return `<p class="empty-note">No European Cup or Champions League final yet.</p>`;
+  if (!won.length && !lost.length) return `<p class="empty-note">No Europa Cup I or Champions League final yet.</p>`;
   const years = (list, key) => list.map((f) => {
     const other = key === "winner" ? f.runnerUp.name : f.winner.name;
     return `<span class="final-year" title="${esc(f.season)} final: ${key === "winner" ? "beat" : "lost to"} ${esc(other)}">${finalYear(f.season)}</span>`;
@@ -887,7 +887,7 @@ function renderClub(id) {
     </div>
     <div class="card stat-card">
       <h2>Previous seasons</h2>
-      <h3 class="sub-head first">European Cup &amp; Champions League finals</h3>
+      <h3 class="sub-head first">Europa Cup I &amp; Champions League finals</h3>
       ${honoursHtml(id, clubData.finals)}
       <h3 class="sub-head">Recent seasons</h3>
       <p class="hint">League-phase position and how far the club got.</p>
