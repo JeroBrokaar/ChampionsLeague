@@ -880,6 +880,16 @@ async function loadEurope() {
     }
   }
   const { competitions } = await loadClubData();
+  // Finals played after the Wikipedia list was made come from our own match data.
+  const FINALS_KEY = { cl: "ec1", el: "ec3", ecl: "ec4" };
+  for (const s of seasons) {
+    const list = competitions.find((c) => c.key === FINALS_KEY[s.comp.key])?.finals;
+    const final = s.matches.find((m) => m.stage === "FINAL" && m.status === "FINISHED");
+    if (!list || !final || list.some((f) => f.season === s.meta.label)) continue;
+    const homeWon = final.score.winner === "HOME_TEAM";
+    const [w, r] = homeWon ? [final.homeTeam, final.awayTeam] : [final.awayTeam, final.homeTeam];
+    list.push({ season: s.meta.label, winner: { name: w.shortName, id: w.id }, runnerUp: { name: r.shortName, id: r.id } });
+  }
   europe = { seasons, clubs, byId, competitions };
   return europe;
 }

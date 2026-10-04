@@ -3,6 +3,7 @@
   Europa Cup I   - European Cup / Champions League   (1956 - )
   Europa Cup II  - Cup Winners' Cup                   (1961 - 1999)
   Europa Cup III - UEFA Cup / Europa League           (1972 - )
+  Conference League                                  (2022 - )
 
 Clubs are linked to football-data.org team ids (as used on the site) by name, using the
 club lists in data/*/standings.json, so download the site's data first.
@@ -15,6 +16,7 @@ COMPETITIONS = [
     ("ec1", "Europa Cup I & Champions League", "List_of_European_Cup_and_UEFA_Champions_League_finals"),
     ("ec2", "Europa Cup II (Cup Winners' Cup)", "List_of_UEFA_Cup_Winners'_Cup_finals"),
     ("ec3", "Europa Cup III (UEFA Cup & Europa League)", "List_of_UEFA_Cup_and_Europa_League_finals"),
+    ("ec4", "Conference League", "List_of_UEFA_Conference_League_finals"),
 ]
 # Wikipedia article -> football-data team id, where the names differ too much to match.
 ALIASES = {
@@ -23,6 +25,7 @@ ALIASES = {
     "FC Porto": 503, "Celtic F.C.": 732, "Juventus FC": 109, "FC Barcelona": 81, "Bayer 04 Leverkusen": 3,
     "A.S. Roma": 100, "Red Star Belgrade": 7283, "Sporting CP": 498, "Athletic Bilbao": 77,
     "Galatasaray S.K. (football)": 610, "FC Shakhtar Donetsk": 1887, "S.S.C. Napoli": 113,
+    "Olympiacos F.C.": 654, "Real Betis": 90,
 }
 
 

@@ -171,6 +171,13 @@
       {"season": "2023/24", "winner": {"name": "Atalanta", "id": 102}, "runnerUp": {"name": "Bayer Leverkusen", "id": 3}},
       {"season": "2024/25", "winner": {"name": "Tottenham Hotspur", "id": 73}, "runnerUp": {"name": "Manchester United", "id": 66}},
       {"season": "2025/26", "winner": {"name": "Aston Villa", "id": 58}, "runnerUp": {"name": "SC Freiburg"}}
+    ] },
+    { "key": "ec4", "title": "Conference League", "source": "https://en.wikipedia.org/wiki/List_of_UEFA_Conference_League_finals", "finals": [
+      {"season": "2021/22", "winner": {"name": "Roma", "id": 100}, "runnerUp": {"name": "Feyenoord", "id": 675}},
+      {"season": "2022/23", "winner": {"name": "West Ham United"}, "runnerUp": {"name": "Fiorentina"}},
+      {"season": "2023/24", "winner": {"name": "Olympiacos", "id": 654}, "runnerUp": {"name": "Fiorentina"}},
+      {"season": "2024/25", "winner": {"name": "Chelsea", "id": 61}, "runnerUp": {"name": "Real Betis", "id": 90}},
+      {"season": "2025/26", "winner": {"name": "Crystal Palace"}, "runnerUp": {"name": "Rayo Vallecano"}}
     ] }
   ]
 }

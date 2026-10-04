@@ -28,7 +28,7 @@ Live: https://jerobrokaar.github.io/ChampionsLeague/ · Repo: https://github.com
 - UEFA round names vary per season (e.g. "Knockout Phase Play-Offs" vs "Knock-out Play-off") — check
   `STAGES` / `ROUNDS` when a new season starts.
 - Static files: `pots.json` (CL, football-data ids), `pots-el.json` / `pots-ecl.json` (UEFA ids, keyed by
-  season start year), `finals.json` (all finals of Europa Cup I/II/III from Wikipedia, football-data ids;
+  season start year), `finals.json` (all finals of Europa Cup I/II/III and the Conference League from Wikipedia, football-data ids;
   UEFA clubs matched by name via `clubKey()`/`CLUB_ALIASES`), `assets/crests/` (crest overrides, e.g. Ajax's
   classic crest via `CREST_OVERRIDES`).
 
@@ -85,6 +85,6 @@ UEFA seasonYear = the year the season ends.
 
 1. CL pots: add the new season to `pots.json` (football-data ids; verify 1 home + 1 away per pot).
 2. EL/ECL pots: `python scripts/fetch_uefa.py` then `python scripts/uefa_pots.py`.
-3. After the May finals: `python scripts/finals_from_wikipedia.py` (needs local CL data) for Europa League finals
-   (CL finals are added automatically from match data).
+3. Finals of the Champions, Europa and Conference League are added automatically from match data (`loadEurope`).
+   `python scripts/finals_from_wikipedia.py` (needs local CL data) only rebuilds the historical list in `finals.json`.
 4. Optional: new Excel sheet with `scripts/uefa_results_workbook.py <year>`.
