@@ -27,6 +27,7 @@
         <button role="tab" class="tab" data-view="matches" aria-selected="false">Matches</button>
         <button role="tab" class="tab" data-view="stats" aria-selected="false">Statistics</button>
         <button role="tab" class="tab" data-view="sim" aria-selected="false">Simulation</button>
+        <button role="tab" class="tab" data-view="club" aria-selected="false">Club</button>
       </nav>
     </div>
   </header>
@@ -84,6 +85,14 @@
       </div>
       <div id="match-list" class="match-list"></div>
     </section>
+    <section id="view-club" class="view" hidden>
+      <div class="club-picker">
+        <label for="club-select">Club</label>
+        <select id="club-select"></select>
+      </div>
+      <div id="club-body" class="stats-grid"><div class="card empty">Loading…</div></div>
+    </section>
+
     <section id="view-sim" class="view" hidden>
       <div id="sim" class="stats-grid"><div class="card empty">Running the simulation…</div></div>
     </section>

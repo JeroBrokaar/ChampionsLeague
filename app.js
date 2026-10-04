@@ -261,7 +261,8 @@ function matchRow(m) {
   const time = new Date(m.utcDate).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   let scoreHtml;
   if (played) {
-    scoreHtml = `<div class="score${LIVE.has(m.status) ? " live" : ""}">${ft.home ?? 0} – ${ft.away ?? 0}</div>`;
+    const pens = m.score?.pens ? `<small class="pens">pens ${m.score.pens.home}–${m.score.pens.away}</small>` : "";
+    scoreHtml = `<div class="score${LIVE.has(m.status) ? " live" : ""}">${ft.home ?? 0} – ${ft.away ?? 0}${pens}</div>`;
   } else if (m.status === "POSTPONED" || m.status === "CANCELLED") {
     scoreHtml = `<div class="score time">${m.status === "POSTPONED" ? "PPD" : "CANC"}</div>`;
   } else {
@@ -323,6 +324,7 @@ function showView(view) {
   history.replaceState(null, "", `${location.pathname}${location.search}${view === "table" ? "" : `#${view}`}`);
   if (view === "stats") loadStats();
   if (view === "sim") loadSim();
+  if (view === "club") loadClub();
 }
 document.querySelectorAll(".tab").forEach((t) => t.addEventListener("click", () => showView(t.dataset.view)));
 
@@ -330,13 +332,26 @@ document.querySelectorAll(".tab").forEach((t) => t.addEventListener("click", () 
 
 let allPots = {};
 
+// football-data's fullTime includes penalty shoot-out goals. Take them out so every score
+// is the result after 90/120 minutes, and keep the shoot-out as score.pens.
+function removeShootouts(data) {
+  for (const m of data.matches || []) {
+    const p = m.score?.penalties, ft = m.score?.fullTime;
+    if (p && ft && ft.home != null && p.home != null) {
+      m.score.pens = p;
+      m.score.fullTime = { home: ft.home - p.home, away: ft.away - p.away };
+    }
+  }
+  return data;
+}
+
 const seasonCache = new Map();
 function fetchSeason(id) {
   const base = id ? `data/${id}` : "data";
   if (!seasonCache.has(base)) {
     seasonCache.set(base, Promise.all([
       loadJson(`${base}/standings.json`),
-      loadJson(`${base}/matches.json`).catch(() => ({ matches: [] })),
+      loadJson(`${base}/matches.json`).then(removeShootouts).catch(() => ({ matches: [] })),
     ]));
   }
   return seasonCache.get(base);
@@ -615,6 +630,203 @@ async function loadSim() {
     console.error(err);
     simLoaded = false;
     box.innerHTML = `<div class="card empty">The simulation is not available right now.</div>`;
+  }
+}
+
+/* ---------- Club ---------- */
+
+let clubData = null; // { seasons: [{ meta, standings, matches }], clubs: Map(id -> team) }
+
+const ordinal = (n) => `${n}${n % 100 >= 11 && n % 100 <= 13 ? "th" : ["th", "st", "nd", "rd"][n % 10] || "th"}`;
+const ZONE_TEXT = { z1: "Round of 16 places", z2: "Play-off places", z3: "Elimination places" };
+
+async function loadClubData() {
+  if (clubData) return clubData;
+  const seasons = [];
+  for (const meta of seasonIndex) {
+    const [standings, matches] = await fetchSeason(meta.id);
+    seasons.push({ meta, table: standings.table || [], matches: matches.matches || [] });
+  }
+  const clubs = new Map();
+  for (const s of seasons) for (const r of s.table) if (!clubs.has(r.team.id)) clubs.set(r.team.id, r.team);
+  clubData = { seasons, clubs };
+  return clubData;
+}
+
+function stageLabel(m) {
+  return m.stage === "LEAGUE_STAGE" ? `Matchday ${m.matchday}` : STAGE_LABELS[m.stage] || m.stage;
+}
+
+function clubRecord(id, seasons) {
+  const blank = () => ({ p: 0, w: 0, d: 0, l: 0, gf: 0, ga: 0 });
+  const rec = { home: blank(), away: blank(), neutral: blank() };
+  for (const s of seasons) {
+    for (const m of s.matches) {
+      if (m.status !== "FINISHED") continue;
+      const home = m.homeTeam?.id === id;
+      if (!home && m.awayTeam?.id !== id) continue;
+      const { home: h, away: a } = m.score.fullTime;
+      const gf = home ? h : a, ga = home ? a : h;
+      const r = m.stage === "FINAL" ? rec.neutral : home ? rec.home : rec.away;
+      r.p++; r.gf += gf; r.ga += ga;
+      if (gf > ga) r.w++; else if (gf < ga) r.l++; else r.d++;
+    }
+  }
+  rec.total = blank();
+  for (const k of ["home", "away", "neutral"]) for (const f of Object.keys(rec.total)) rec.total[f] += rec[k][f];
+  return rec;
+}
+
+function recordTableHtml(rec) {
+  const rows = [["Home", rec.home], ["Away", rec.away], ...(rec.neutral.p ? [["Final (neutral)", rec.neutral]] : []), ["Total", rec.total]];
+  return `<table class="mini club-record">
+    <thead><tr><th></th><th>P</th><th>W</th><th>D</th><th>L</th><th>GF</th><th>GA</th><th>GD</th><th>Win %</th></tr></thead>
+    <tbody>${rows.map(([label, r]) => `<tr class="${label === "Total" ? "total" : ""}">
+      <td class="season-cell">${label}</td><td>${r.p}</td><td>${r.w}</td><td>${r.d}</td><td>${r.l}</td>
+      <td>${r.gf}</td><td>${r.ga}</td><td>${signed(r.gf - r.ga)}</td><td><b>${r.p ? pctText(r.w / r.p) : "–"}</b></td>
+    </tr>`).join("")}</tbody>
+  </table>`;
+}
+
+function fixtureLine(m, id, potOf, posOf, big) {
+  const home = m.homeTeam.id === id;
+  const opp = home ? m.awayTeam : m.homeTeam;
+  const when = new Date(m.utcDate);
+  const date = `${when.toLocaleDateString([], { weekday: "short" })} ${shortDate(m.utcDate)}`;
+  const time = when.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const extra = [potOf[opp.id] ? `Pot ${potOf[opp.id]}` : "", posOf.get(opp.id) ? `${ordinal(posOf.get(opp.id))} now` : ""].filter(Boolean).join(" · ");
+  if (big) {
+    return `<div class="next-match">
+      <div class="next-opp">${crest(opp.crest)}<div><div class="next-name">${home ? "vs" : "at"} ${esc(opp.name)}</div>
+        <div class="next-meta">${home ? "Home" : "Away"} · ${esc(stageLabel(m))}${extra ? ` · ${esc(extra)}` : ""}</div></div></div>
+      <div class="next-when"><b>${esc(date)}</b><span>${time}</span></div>
+    </div>`;
+  }
+  return `<div class="fixture-row">
+    <span class="fx-when">${esc(date)}</span>
+    <span class="fx-ha ${home ? "h" : "a"}">${home ? "H" : "A"}</span>
+    <span class="fx-opp">${crest(opp.crest)}${esc(opp.shortName || opp.name)}</span>
+    <span class="fx-extra">${esc(extra)}</span>
+  </div>`;
+}
+
+function renderClub(id) {
+  const { seasons, clubs } = clubData;
+  const team = clubs.get(id);
+  if (!team) return;
+  const current = seasons.find((s) => s.meta.current) || seasons[0];
+  const past = seasons.filter((s) => s !== current);
+  const idx = current.table.findIndex((r) => r.team.id === id);
+  const row = current.table[idx];
+
+  // Current season
+  let nowHtml;
+  if (row) {
+    const pos = idx + 1, z = posZone(pos);
+    const leagueDone = current.table.every((r) => r.playedGames >= LEAGUE_GAMES);
+    const result = finalResults(current.matches);
+    const status = clinchStatus(current.table)?.get(id);
+    nowHtml = `<div class="club-now">
+        <div class="club-pos"><span class="pchip ${z}">${pos}</span><div><b>${ordinal(pos)} of ${current.table.length}</b>
+          <span>${leagueDone ? "Final league-phase position" : ZONE_TEXT[z]}${status && STATUS[status] ? ` · ${STATUS[status].title}` : ""}</span></div></div>
+        <div class="club-stats">
+          <div><b>${row.points}</b><span>Points</span></div>
+          <div><b>${row.playedGames}</b><span>Played</span></div>
+          <div><b>${row.won}-${row.draw}-${row.lost}</b><span>W-D-L</span></div>
+          <div><b>${signed(row.goalDifference)}</b><span>Goal diff.</span></div>
+        </div>
+        ${result ? `<div class="club-result">Result: <span class="result ${RESULT[result.get(id) || "LEAGUE"].cls}">${RESULT[result.get(id) || "LEAGUE"].label}</span></div>` : ""}
+      </div>`;
+  } else {
+    nowHtml = `<p class="empty-note">${esc(team.shortName || team.name)} is not in the ${esc(current.meta.label)} Champions League.</p>`;
+  }
+
+  // Upcoming fixtures
+  const potOf = potIndex(allPots[current.meta.id]);
+  const posOf = new Map(current.table.map((r, i) => [r.team.id, i + 1]));
+  const upcoming = current.matches
+    .filter((m) => m.status !== "FINISHED" && (m.homeTeam?.id === id || m.awayTeam?.id === id) && m.homeTeam?.id && m.awayTeam?.id)
+    .sort((a, b) => a.utcDate.localeCompare(b.utcDate));
+  const nextHtml = upcoming.length
+    ? fixtureLine(upcoming[0], id, potOf, posOf, true) +
+      (upcoming.length > 1 ? `<h3 class="sub-head">After that</h3>${upcoming.slice(1).map((m) => fixtureLine(m, id, potOf, posOf, false)).join("")}` : "")
+    : `<p class="empty-note">${row ? "No upcoming matches scheduled." : "Not taking part this season."}</p>`;
+
+  // Previous seasons
+  const pastHtml = past.map((s) => {
+    const i = s.table.findIndex((r) => r.team.id === id);
+    if (i === -1) return `<div class="past-row"><span class="past-season">${esc(s.meta.label)}</span><span class="muted">Did not take part</span></div>`;
+    const res = finalResults(s.matches);
+    const key = res ? res.get(id) || "LEAGUE" : null;
+    return `<div class="past-row">
+      <span class="past-season">${esc(s.meta.label)}</span>
+      <span class="pchip ${posZone(i + 1)}">${i + 1}</span>
+      <span class="past-pts">${s.table[i].points} pts</span>
+      ${key ? `<span class="result ${RESULT[key].cls}">${RESULT[key].label}</span>` : ""}
+    </div>`;
+  }).join("");
+
+  const rec = clubRecord(id, seasons);
+  const first = seasons[seasons.length - 1].meta.label;
+
+  $("#club-body").innerHTML = `
+    <div class="card stat-card wide club-head">
+      ${team.crest ? `<img class="club-crest" src="${esc(team.crest)}" alt="">` : ""}
+      <div class="club-title"><h2>${esc(team.name)}</h2><p class="hint">${esc(current.meta.label)} · League phase</p></div>
+      ${nowHtml}
+    </div>
+    <div class="card stat-card">
+      <h2>Next match</h2>
+      ${nextHtml}
+    </div>
+    <div class="card stat-card">
+      <h2>Previous seasons</h2>
+      <p class="hint">League-phase position and how far the club got.</p>
+      ${pastHtml || `<p class="empty-note">No earlier seasons in this format.</p>`}
+    </div>
+    <div class="card stat-card wide">
+      <h2>Record in this format</h2>
+      <p class="hint">All Champions League matches since ${esc(first)}, when the 36-team league phase started, including knockouts.
+        Penalty shoot-outs count as draws.</p>
+      ${rec.total.p ? recordTableHtml(rec) : `<p class="empty-note">No matches played yet.</p>`}
+    </div>`;
+}
+
+function chooseClub(id) {
+  try { localStorage.setItem("club", String(id)); } catch {}
+  const params = new URLSearchParams(location.search);
+  params.set("club", id);
+  history.replaceState(null, "", `${location.pathname}?${params}${location.hash}`);
+  renderClub(id);
+}
+
+let clubLoaded = false;
+async function loadClub() {
+  if (clubLoaded) return;
+  clubLoaded = true;
+  try {
+    const { seasons, clubs } = await loadClubData();
+    const current = seasons.find((s) => s.meta.current) || seasons[0];
+    const inCurrent = new Set(current.table.map((r) => r.team.id));
+    const byName = (a, b) => (a.shortName || a.name).localeCompare(b.shortName || b.name);
+    const nowList = [...clubs.values()].filter((t) => inCurrent.has(t.id)).sort(byName);
+    const earlier = [...clubs.values()].filter((t) => !inCurrent.has(t.id)).sort(byName);
+    const opt = (t) => `<option value="${t.id}">${esc(t.shortName || t.name)}</option>`;
+    const select = $("#club-select");
+    select.innerHTML = `<optgroup label="${esc(current.meta.label)}">${nowList.map(opt).join("")}</optgroup>` +
+      (earlier.length ? `<optgroup label="Earlier seasons">${earlier.map(opt).join("")}</optgroup>` : "");
+
+    let saved = null;
+    try { saved = localStorage.getItem("club"); } catch {}
+    const wanted = Number(new URLSearchParams(location.search).get("club") || saved);
+    const id = clubs.has(wanted) ? wanted : current.table[0]?.team.id;
+    select.value = String(id);
+    select.onchange = () => chooseClub(Number(select.value));
+    renderClub(id);
+  } catch (err) {
+    console.error(err);
+    clubLoaded = false;
+    $("#club-body").innerHTML = `<div class="card empty">Club pages are not available right now.</div>`;
   }
 }
 
@@ -1176,7 +1388,7 @@ async function loadStats() {
     seasonIndex = index?.seasons || [];
     const id = seasonIndex.length ? setupSeasonPicker(seasonIndex) : null;
     const startView = location.hash.slice(1);
-    if (["matches", "stats", "sim"].includes(startView)) showView(startView);
+    if (["matches", "stats", "sim", "club"].includes(startView)) showView(startView);
     await loadSeason(id);
   } catch (err) {
     showError(err);

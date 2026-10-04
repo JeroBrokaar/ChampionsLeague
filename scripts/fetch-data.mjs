@@ -58,7 +58,13 @@ async function fetchSeason(year) {
       stage: m.stage,
       homeTeam: team(m.homeTeam),
       awayTeam: team(m.awayTeam),
-      score: { winner: m.score?.winner, fullTime: m.score?.fullTime },
+      // fullTime includes shoot-out goals; keep the shoot-out separately so the site can remove it.
+      score: {
+        winner: m.score?.winner,
+        duration: m.score?.duration,
+        fullTime: m.score?.fullTime,
+        ...(m.score?.penalties?.home != null ? { penalties: m.score.penalties } : {}),
+      },
     })),
   };
 
