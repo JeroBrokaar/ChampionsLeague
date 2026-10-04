@@ -968,8 +968,8 @@ function renderClub(anyId) {
     resultsHtml = nextHtml = `<p class="empty-note">Not taking part this season.</p>`;
   }
 
-  // Recent seasons, oldest first: the competition the club played in, and how it went
-  const pastIds = [...new Set(europe.seasons.filter((s) => !s.meta.current).map((s) => s.meta.id))].sort();
+  // Recent seasons, most recent first: the competition the club played in, and how it went
+  const pastIds = [...new Set(europe.seasons.filter((s) => !s.meta.current).map((s) => s.meta.id))].sort().reverse();
   const pastHtml = pastIds.map((sid) => {
     const found = europe.seasons.filter((s) => s.meta.id === sid)
       .map((s) => ({ s, i: s.table.findIndex((r) => club.ids.has(r.team.id)) })).find((x) => x.i !== -1);
@@ -992,7 +992,7 @@ function renderClub(anyId) {
   const honours = honoursHtml(members, europe.competitions);
 
   const rec = clubRecord(club.ids, europe.seasons);
-  const first = pastIds.length ? europe.seasons.find((s) => s.meta.id === pastIds[0]).meta.label : seasonLabel;
+  const first = pastIds.length ? europe.seasons.find((s) => s.meta.id === pastIds[pastIds.length - 1]).meta.label : seasonLabel;
 
   $("#club-body").innerHTML = `
     <div class="card stat-card wide club-head">

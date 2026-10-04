@@ -56,7 +56,7 @@ Top 8/Top 24 columns and match chance bars are all `false`. Code is intact; re-e
 - GF/GA/GD always visually de-emphasised (muted grey).
 - Talking points: one fact per topic per team, **positive phrasing** (no "never"/"haven't"), "in this format"
   (data only goes back to 2024/25), facts computed as of kick-off.
-- Club page "Previous seasons": finals (winners first, then runners-up, per cup), then recent seasons oldest first.
+- Club page "Previous seasons": European titles per cup, then recent seasons (most recent on top) with a competition sticker.
 - Don't use official UEFA logos (trademark); club crests come from the data sources.
 - Ask before big redesigns; show test evidence (screenshots/checks) when reporting.
 
