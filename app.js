@@ -927,7 +927,13 @@ function recordOf(list) {
 
 const streak = (list, test) => { let n = 0; for (const g of list) { if (!test(g)) break; n++; } return n; };
 
-const RESULT_WORD = { W: ["won", "wins"], D: ["drew", "draws"], L: ["lost", "defeats"] };
+const RESULT_WORD = { W: "won", D: "drew", L: "lost" };
+
+// "won 3 and drew 1" — only the parts that occurred, in W/D/L order.
+function wdlText(r) {
+  const parts = [["won", r.w], ["drew", r.d], ["lost", r.l]].filter(([, n]) => n).map(([v, n]) => `${v} ${n}`);
+  return parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}` : parts[0] || "";
+}
 
 // Current run of identical results, and when the team last had a longer one.
 function streakHistoryFact(name, hist) {
@@ -944,76 +950,83 @@ function streakHistoryFact(name, hist) {
     if (j - i >= n + 1) { found = hist[j - 1 - n]; break; } // the match that made it n + 1
     i = j;
   }
-  const [verb] = RESULT_WORD[type];
+  const verb = RESULT_WORD[type];
+  const kind = { W: "winning", D: "drawing", L: "losing" }[type];
   const now = `${name} have ${verb} their last ${n} matches.`;
-  return found
-    ? { score: n + 1.5, text: `${now} The last time they ${verb} ${n + 1} in a row was ${longDate(found.m.utcDate)}.` }
-    : { score: n + 2.5, text: `${now} They have never ${verb} ${n + 1} in a row in this format.` };
+  return {
+    type,
+    fact: found
+      ? { topic: "run", score: n + 1.5, text: `${now} The last time they ${verb} ${n + 1} in a row was ${longDate(found.m.utcDate)}.` }
+      : { topic: "run", score: n + 2.5, text: `${now} This is their longest ${kind} run in this format.` },
+  };
 }
 
-// Record against clubs from the opponent's country.
-function countryFact(name, hist, country, countryOf) {
-  if (!country) return null;
-  const games = hist.filter((g) => countryOf.get(g.opp.id) === country);
+// "lost all 5 games …" / "drew 1 and lost 3 of their 4 games …" (with last: "… of their last 4 …")
+function ofText(r, n, what, last = false) {
+  const single = [r.w, r.d, r.l].filter(Boolean).length === 1;
+  const verb = r.w ? "won" : r.d ? "drew" : "lost";
+  if (single) return last ? `${verb} their last ${n} ${what}` : `${verb} all ${n} ${what}`;
+  return `${wdlText(r)} of their ${last ? "last " : ""}${n} ${what}`;
+}
+const ofShort = (r, n) => ([r.w, r.d, r.l].filter(Boolean).length === 1 ? `${r.w ? "won" : r.d ? "drew" : "lost"} all ${n}` : `${wdlText(r)} of ${n}`);
+
+// Record against a group of opponents (top-8 teams, or clubs from one country).
+function groupFact(name, games, label, topic) {
   if (games.length < 3) return null;
   const r = recordOf(games);
-  const teams = `teams from ${country}`, aTeam = `a team from ${country}`;
-  if (r.l === 0) return { score: games.length + 1, text: `${name} have never lost against ${teams} in this format (${games.length} games).` };
-  if (r.w === 0) return { score: games.length + 1, text: `${name} have never beaten ${aTeam} in this format (${games.length} games).` };
+  if (r.l === 0) return { topic, score: games.length + 1, text: `${name} are unbeaten against ${label} in this format (${ofShort(r, games.length)}).` };
+  if (r.w === 0) return { topic, score: games.length + 1, text: `${name} ${ofText(r, games.length, `games against ${label}`)} in this format.` };
   const lastLoss = games.find((g) => g.res === "L"), sinceLoss = games.indexOf(lastLoss);
-  if (sinceLoss >= 3) return { score: sinceLoss, text: `${name} haven't lost against ${aTeam} since ${longDate(lastLoss.m.utcDate)} (${sinceLoss} games).` };
+  if (sinceLoss >= 3) return { topic, score: sinceLoss + 1, text: `${name} are unbeaten in their last ${sinceLoss} games against ${label} (last defeat: ${longDate(lastLoss.m.utcDate)}).` };
   const lastWin = games.find((g) => g.res === "W"), sinceWin = games.indexOf(lastWin);
-  if (sinceWin >= 3) return { score: sinceWin, text: `${name} haven't beaten ${aTeam} since ${longDate(lastWin.m.utcDate)} (${sinceWin} games).` };
+  if (sinceWin >= 3) return { topic, score: sinceWin, text: `${name} ${ofText(recordOf(games.slice(0, sinceWin)), sinceWin, `games against ${label}`, true)} (last win: ${longDate(lastWin.m.utcDate)}).` };
   return null;
 }
 
-// Interesting facts about one team going into the match, most notable first.
+// Interesting facts about one team going into the match: at most one per topic,
+// phrased positively ("lost their last 3", not "haven't won"), most notable first.
 function teamFacts(team, hist, venue, oppCountry, countryOf) {
-  const facts = [];
   const name = tname(team);
+  if (!hist.length) return [{ score: 1, text: `${name} play their first Champions League match in this format.` }];
+  const facts = [];
+  const add = (topic, score, text) => facts.push({ topic, score, text });
   const where = venue === "home" ? "home" : "away";
   const atVenue = hist.filter((g) => !g.final && g.home === (venue === "home"));
-  const add = (score, text) => facts.push({ score, text });
 
-  if (!hist.length) return [{ score: 1, text: `${name} play their first Champions League match in this format.` }];
+  // Overall run (all matches)
+  const run = streakHistoryFact(name, hist);
+  if (run) facts.push(run.fact);
 
-  const w = streak(atVenue, (g) => g.res === "W"), unb = streak(atVenue, (g) => g.res !== "L");
-  const winless = streak(atVenue, (g) => g.res !== "W"), lost = streak(atVenue, (g) => g.res === "L");
-  if (w >= 3) add(w + 2, `${name} won their last ${w} ${where} games.`);
-  else if (unb >= 4) add(unb, `${name} are unbeaten in their last ${unb} ${where} games.`);
-  if (lost >= 2) add(lost + 2, `${name} lost their last ${lost} ${where} games.`);
-  else if (winless >= 3) add(winless, `${name} haven't won any of their last ${winless} ${where} games.`);
-
-  const venueRec = recordOf(atVenue);
-  if (venueRec.p >= 4 && venueRec.l === 0) add(6, `${name} have never lost ${venue === "home" ? "at home" : "away"} in this format (${venueRec.p} games).`);
-  if (venueRec.p >= 4 && venueRec.w === 0) add(6, `${name} have never won ${venue === "home" ? "at home" : "away"} in this format (${venueRec.p} games).`);
-
-  // Against top-8 teams (top 8 of that season's table)
-  const top8 = hist.filter((g) => g.oppTop8);
-  if (top8.length >= 3) {
-    const lastLoss = top8.find((g) => g.res === "L");
-    const sinceLoss = lastLoss ? top8.indexOf(lastLoss) : top8.length;
-    if (sinceLoss >= 3) add(sinceLoss + 1, lastLoss
-      ? `${name} haven't lost against a top-8 team since ${longDate(lastLoss.m.utcDate)} (${sinceLoss} games).`
-      : `${name} have never lost against a top-8 team in this format (${top8.length} games).`);
-    const lastWin = top8.find((g) => g.res === "W");
-    const sinceWin = lastWin ? top8.indexOf(lastWin) : top8.length;
-    if (sinceWin >= 3) add(sinceWin, lastWin
-      ? `${name} haven't beaten a top-8 team since ${longDate(lastWin.m.utcDate)} (${sinceWin} games).`
-      : `${name} have never beaten a top-8 team in this format (${top8.length} games).`);
+  // Results at this venue. A current streak is preferred over "whole format" records, and
+  // skipped when the overall run already says it (lost 7 in a row implies the home games).
+  const w = streak(atVenue, (g) => g.res === "W"), lost = streak(atVenue, (g) => g.res === "L");
+  const unb = streak(atVenue, (g) => g.res !== "L"), winless = streak(atVenue, (g) => g.res !== "W");
+  const impliedByRun = (type) => run && run.type === type;
+  if (w >= 3 && !impliedByRun("W")) add("venue", w + 3, `${name} won their last ${w} ${where} games.`);
+  else if (lost >= 2 && !impliedByRun("L")) add("venue", lost + 3, `${name} lost their last ${lost} ${where} games.`);
+  else if (unb >= 4 && !run) add("venue", unb + 1, `${name} ${ofText(recordOf(atVenue.slice(0, unb)), unb, `${where} games`, true)}.`);
+  else if (winless >= 3 && !run) add("venue", winless + 1, `${name} ${ofText(recordOf(atVenue.slice(0, winless)), winless, `${where} games`, true)}.`);
+  else if (!run) {
+    const rec = recordOf(atVenue);
+    if (rec.p >= 4 && (rec.l === 0 || rec.w === 0)) add("venue", 4, `${name} ${ofText(rec, rec.p, `${where} games`)} in this format.`);
   }
 
-  const run = streakHistoryFact(name, hist);
-  if (run) facts.push(run);
-  const vsCountry = countryFact(name, hist, oppCountry, countryOf || new Map());
-  if (vsCountry) facts.push(vsCountry);
+  // Against top-8 teams and against clubs from the opponent's country
+  const top8 = groupFact(name, hist.filter((g) => g.oppTop8), "top-8 teams", "top8");
+  if (top8) facts.push(top8);
+  if (oppCountry && countryOf) {
+    const c = groupFact(name, hist.filter((g) => countryOf.get(g.opp.id) === oppCountry), `teams from ${oppCountry}`, "country");
+    if (c) facts.push(c);
+  }
 
+  // Scoring and defence
   const scored = streak(hist, (g) => g.gf > 0), blank = streak(hist, (g) => g.gf === 0), clean = streak(hist, (g) => g.ga === 0);
-  if (scored >= 6) add(scored / 2, `${name} scored in each of their last ${scored} matches.`);
-  if (blank >= 2) add(blank + 1, `${name} failed to score in their last ${blank} matches.`);
-  if (clean >= 3) add(clean + 1, `${name} kept a clean sheet in their last ${clean} matches.`);
+  if (scored >= 6) add("goals", scored / 2, `${name} scored in each of their last ${scored} matches.`);
+  else if (blank >= 2) add("goals", blank + 1, `${name} failed to score in their last ${blank} matches.`);
+  if (clean >= 3) add("defence", clean + 1, `${name} kept a clean sheet in their last ${clean} matches.`);
 
-  return facts.sort((a, b) => b.score - a.score).slice(0, 3);
+  const seen = new Set();
+  return facts.sort((a, b) => b.score - a.score).filter((f) => !seen.has(f.topic) && seen.add(f.topic)).slice(0, 3);
 }
 
 // Last 5 results, oldest first, grouped by season ("25/26 | 26/27").
