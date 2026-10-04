@@ -272,7 +272,8 @@ function matchRow(m) {
   const winner = m.status === "FINISHED" ? m.score?.winner : null;
   const name = (t, side) =>
     `<span class="${winner && winner !== side && winner !== "DRAW" ? "loser" : ""}">${esc(t?.shortName || t?.name || "TBD")}</span>`;
-  return `<div class="match">
+  const known = m.homeTeam?.id && m.awayTeam?.id;
+  return `<div class="match${known ? " clickable" : ""}"${known ? ` data-match="${m.id}" role="button" tabindex="0" aria-label="Match details"` : ""}>
     <div class="side home">${name(m.homeTeam, "HOME_TEAM")}${crest(m.homeTeam?.crest)}</div>
     ${scoreHtml}
     <div class="side away">${crest(m.awayTeam?.crest)}${name(m.awayTeam, "AWAY_TEAM")}</div>
@@ -328,6 +329,22 @@ function showView(view) {
   if (view === "club") loadClub();
 }
 document.querySelectorAll(".tab").forEach((t) => t.addEventListener("click", () => showView(t.dataset.view)));
+
+// Clicking a match on the Matches tab opens its detail page.
+function onMatchActivate(e) {
+  const el = e.target.closest("[data-match]");
+  if (!el || (e.type === "keydown" && e.key !== "Enter" && e.key !== " ")) return;
+  e.preventDefault();
+  openMatch(Number(el.dataset.match), true);
+}
+$("#match-list").addEventListener("click", onMatchActivate);
+$("#match-list").addEventListener("keydown", onMatchActivate);
+
+window.addEventListener("popstate", () => {
+  const h = location.hash.slice(1);
+  if (h.startsWith("match-")) openMatch(Number(h.slice(6)), false);
+  else showView(["matches", "stats", "sim", "club"].includes(h) ? h : "table");
+});
 
 /* ---------- Seasons ---------- */
 
@@ -867,6 +884,214 @@ async function loadClub() {
     $("#club-body").innerHTML = `<div class="card empty">Club pages are not available right now.</div>`;
   }
 }
+
+/* ---------- Match detail ---------- */
+
+const longDate = (iso) => { const d = new Date(iso); return `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`; };
+const tname = (t) => esc(t.shortName || t.name);
+
+// A team's finished Champions League matches before `before`, newest first.
+function teamHistory(id, seasons, before) {
+  const out = [];
+  for (const s of seasons) {
+    const posOf = new Map(s.table.map((r, i) => [r.team.id, i + 1]));
+    for (const m of s.matches) {
+      if (m.status !== "FINISHED" || m.utcDate >= before) continue;
+      const home = m.homeTeam?.id === id;
+      if (!home && m.awayTeam?.id !== id) continue;
+      const { home: h, away: a } = m.score.fullTime;
+      const gf = home ? h : a, ga = home ? a : h;
+      const opp = home ? m.awayTeam : m.homeTeam;
+      out.push({ m, home, gf, ga, opp, res: gf > ga ? "W" : gf < ga ? "L" : "D", oppTop8: (posOf.get(opp.id) || 99) <= 8, final: m.stage === "FINAL" });
+    }
+  }
+  return out.sort((x, y) => y.m.utcDate.localeCompare(x.m.utcDate));
+}
+
+function recordOf(list) {
+  const r = { p: list.length, w: 0, d: 0, l: 0, gf: 0, ga: 0 };
+  for (const g of list) { r.gf += g.gf; r.ga += g.ga; r[g.res === "W" ? "w" : g.res === "D" ? "d" : "l"]++; }
+  r.ppg = r.p ? (r.w * 3 + r.d) / r.p : null;
+  return r;
+}
+
+const streak = (list, test) => { let n = 0; for (const g of list) { if (!test(g)) break; n++; } return n; };
+
+// Interesting facts about one team going into the match, most notable first.
+function teamFacts(team, hist, venue) {
+  const facts = [];
+  const name = tname(team);
+  const where = venue === "home" ? "home" : "away";
+  const atVenue = hist.filter((g) => !g.final && g.home === (venue === "home"));
+  const add = (score, text) => facts.push({ score, text });
+
+  if (!hist.length) return [{ score: 1, text: `${name} play their first Champions League match in this format.` }];
+
+  const w = streak(atVenue, (g) => g.res === "W"), unb = streak(atVenue, (g) => g.res !== "L");
+  const winless = streak(atVenue, (g) => g.res !== "W"), lost = streak(atVenue, (g) => g.res === "L");
+  if (w >= 3) add(w + 2, `${name} won their last ${w} ${where} games.`);
+  else if (unb >= 4) add(unb, `${name} are unbeaten in their last ${unb} ${where} games.`);
+  if (lost >= 2) add(lost + 2, `${name} lost their last ${lost} ${where} games.`);
+  else if (winless >= 3) add(winless, `${name} haven't won any of their last ${winless} ${where} games.`);
+
+  const venueRec = recordOf(atVenue);
+  if (venueRec.p >= 4 && venueRec.l === 0) add(6, `${name} have never lost ${venue === "home" ? "at home" : "away"} in this format (${venueRec.p} games).`);
+  if (venueRec.p >= 4 && venueRec.w === 0) add(6, `${name} have never won ${venue === "home" ? "at home" : "away"} in this format (${venueRec.p} games).`);
+
+  // Against top-8 teams (top 8 of that season's table)
+  const top8 = hist.filter((g) => g.oppTop8);
+  if (top8.length >= 3) {
+    const lastLoss = top8.find((g) => g.res === "L");
+    const sinceLoss = lastLoss ? top8.indexOf(lastLoss) : top8.length;
+    if (sinceLoss >= 3) add(sinceLoss + 1, lastLoss
+      ? `${name} haven't lost against a top-8 team since ${longDate(lastLoss.m.utcDate)} (${sinceLoss} games).`
+      : `${name} have never lost against a top-8 team in this format (${top8.length} games).`);
+    const lastWin = top8.find((g) => g.res === "W");
+    const sinceWin = lastWin ? top8.indexOf(lastWin) : top8.length;
+    if (sinceWin >= 3) add(sinceWin, lastWin
+      ? `${name} haven't beaten a top-8 team since ${longDate(lastWin.m.utcDate)} (${sinceWin} games).`
+      : `${name} have never beaten a top-8 team in this format (${top8.length} games).`);
+  }
+
+  const scored = streak(hist, (g) => g.gf > 0), blank = streak(hist, (g) => g.gf === 0), clean = streak(hist, (g) => g.ga === 0);
+  if (scored >= 6) add(scored / 2, `${name} scored in each of their last ${scored} matches.`);
+  if (blank >= 2) add(blank + 1, `${name} failed to score in their last ${blank} matches.`);
+  if (clean >= 3) add(clean + 1, `${name} kept a clean sheet in their last ${clean} matches.`);
+
+  return facts.sort((a, b) => b.score - a.score).slice(0, 3);
+}
+
+function formChips(hist) {
+  return hist.slice(0, 5).reverse().map((g) => {
+    const cls = g.res === "W" ? "win" : g.res === "L" ? "loss" : "draw";
+    return `<span class="res ${cls}" title="${g.home ? "vs" : "at"} ${esc(g.opp.shortName || g.opp.name)} ${g.m.score.fullTime.home}–${g.m.score.fullTime.away} · ${shortDate(g.m.utcDate)}">${g.res}</span>`;
+  }).join("") || `<span class="muted">No matches yet</span>`;
+}
+
+function compareRows(a, b) {
+  const rows = [
+    ["Played", a.p, b.p, null],
+    ["Won", a.w, b.w, "high"],
+    ["Drawn", a.d, b.d, null],
+    ["Lost", a.l, b.l, "low"],
+    ["Goals scored", a.gf, b.gf, "high"],
+    ["Goals conceded", a.ga, b.ga, "low"],
+    ["Points per game", a.ppg, b.ppg, "high"],
+  ];
+  const fmt = (v, i) => (v === null ? "–" : i === 6 ? v.toFixed(2) : v);
+  return rows.map(([label, x, y, better], i) => {
+    // Compare per game so teams with more matches don't look better by default.
+    const px = i === 6 ? x : a.p ? x / a.p : null, py = i === 6 ? y : b.p ? y / b.p : null;
+    const winX = better && px !== null && py !== null && (better === "high" ? px > py : px < py);
+    const winY = better && px !== null && py !== null && (better === "high" ? py > px : py < px);
+    return `<div class="cmp-row"><span class="cmp-val ${winX ? "better" : ""}">${fmt(x, i)}</span><span class="cmp-label">${label}</span><span class="cmp-val ${winY ? "better" : ""}">${fmt(y, i)}</span></div>`;
+  }).join("");
+}
+
+async function renderMatch(id) {
+  const box = $("#match-detail");
+  const { seasons } = await loadClubData();
+  let season = null, m = null;
+  for (const s of seasons) { m = s.matches.find((x) => x.id === id); if (m) { season = s; break; } }
+  if (!m || !m.homeTeam?.id || !m.awayTeam?.id) {
+    box.innerHTML = `<div class="card empty">Match not found.</div>`;
+    return;
+  }
+  const H = m.homeTeam, A = m.awayTeam;
+  const posOf = new Map(season.table.map((r, i) => [r.team.id, i + 1]));
+  const played = m.status === "FINISHED" || LIVE.has(m.status);
+  const ft = m.score.fullTime;
+  const when = new Date(m.utcDate);
+  const centre = played
+    ? `<div class="md-score${LIVE.has(m.status) ? " live" : ""}">${ft.home}–${ft.away}</div>${m.score.pens ? `<div class="md-sub">pens ${m.score.pens.home}–${m.score.pens.away}</div>` : ""}<div class="md-sub">${LIVE.has(m.status) ? "Live" : "Full time"}</div>`
+    : `<div class="md-time">${when.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div><div class="md-sub">${WEEKDAYS[when.getDay()]} ${longDate(m.utcDate)}</div>`;
+  const posText = (t) => posOf.get(t.id) ? `${ordinal(posOf.get(t.id))} in ${esc(season.meta.label)}` : "";
+
+  // Everything below is "going into the match": only matches before kick-off count.
+  const before = m.utcDate;
+  const hHist = teamHistory(H.id, seasons, before), aHist = teamHistory(A.id, seasons, before);
+  const meetings = hHist.filter((g) => g.opp.id === A.id);
+  let hw = 0, dr = 0, aw = 0;
+  for (const g of meetings) { if (g.res === "W") hw++; else if (g.res === "L") aw++; else dr++; }
+  const h2hHtml = meetings.length
+    ? `<div class="h2h-summary">
+        <div><b>${hw}</b><span>${tname(H)} wins</span></div>
+        <div><b>${dr}</b><span>Draws</span></div>
+        <div><b>${aw}</b><span>${tname(A)} wins</span></div>
+      </div>
+      ${meetings.map((g) => `<div class="h2h-row">
+        <span class="fx-when">${longDate(g.m.utcDate)}</span>
+        <span class="h2h-teams">${tname(g.m.homeTeam)} <b>${g.m.score.fullTime.home}–${g.m.score.fullTime.away}</b> ${tname(g.m.awayTeam)}${g.m.score.pens ? ` <small class="muted">(pens ${g.m.score.pens.home}–${g.m.score.pens.away})</small>` : ""}</span>
+        <span class="fx-extra">${esc(stageLabel(g.m))}</span>
+      </div>`).join("")}`
+    : `<p class="empty-note">${tname(H)} and ${tname(A)} haven't met in the Champions League since ${esc(seasons[seasons.length - 1].meta.label)}. This is their first meeting in this format.</p>`;
+
+  const hHome = hHist.filter((g) => g.home && !g.final), aAway = aHist.filter((g) => !g.home && !g.final);
+  const thisSeason = (g) => g.m.utcDate >= (season.matches.map((x) => x.utcDate).sort()[0] || "");
+  const facts = [...teamFacts(H, hHist, "home").map((f) => ({ ...f, team: H })), ...teamFacts(A, aHist, "away").map((f) => ({ ...f, team: A }))]
+    .sort((a, b) => b.score - a.score);
+
+  box.innerHTML = `
+    <div class="card stat-card wide md-head">
+      <div class="md-round">${esc(stageLabel(m))} · ${esc(season.meta.label)}</div>
+      <div class="md-teams">
+        <div class="md-team">${H.crest ? `<img src="${esc(H.crest)}" alt="">` : ""}<b>${tname(H)}</b><span>${posText(H)}</span></div>
+        <div class="md-centre">${centre}</div>
+        <div class="md-team">${A.crest ? `<img src="${esc(A.crest)}" alt="">` : ""}<b>${tname(A)}</b><span>${posText(A)}</span></div>
+      </div>
+      <div class="md-form">
+        <div><span class="md-form-label">Form</span>${formChips(hHist)}</div>
+        <div>${formChips(aHist)}</div>
+      </div>
+    </div>
+    <div class="card stat-card wide">
+      <h2>Talking points</h2>
+      <p class="hint">${played ? "Going into this match" : "Going into the match"}, based on Champions League matches since ${esc(seasons[seasons.length - 1].meta.label)}.
+        A top-8 team is one in the top 8 of that season's league table.</p>
+      ${facts.length ? `<ul class="facts">${facts.map((f) => `<li>${crest(f.team.crest)}<span>${f.text}</span></li>`).join("")}</ul>`
+        : `<p class="empty-note">Nothing remarkable yet.</p>`}
+    </div>
+    <div class="card stat-card">
+      <h2>Head to head</h2>
+      ${h2hHtml}
+    </div>
+    <div class="card stat-card">
+      <h2>${tname(H)} at home vs ${tname(A)} away</h2>
+      <div class="seg-buttons" role="group" aria-label="Period">
+        <button type="button" data-cmp="all" class="active">Since ${esc(seasons[seasons.length - 1].meta.label)}</button>
+        <button type="button" data-cmp="season">This season</button>
+      </div>
+      <div class="cmp-head"><span>${crest(H.crest)}${tname(H)} home</span><span>${tname(A)} away${crest(A.crest)}</span></div>
+      <div id="cmp-body">${compareRows(recordOf(hHome), recordOf(aAway))}</div>
+    </div>`;
+
+  box.querySelectorAll("[data-cmp]").forEach((btn) => btn.addEventListener("click", () => {
+    box.querySelectorAll("[data-cmp]").forEach((b) => b.classList.toggle("active", b === btn));
+    const pick = (list) => (btn.dataset.cmp === "season" ? list.filter(thisSeason) : list);
+    $("#cmp-body").innerHTML = compareRows(recordOf(pick(hHome)), recordOf(pick(aAway)));
+  }));
+}
+
+function openMatch(id, push) {
+  if (push) history.pushState({ fromList: true }, "", `${location.pathname}${location.search}#match-${id}`);
+  document.querySelectorAll(".tab").forEach((t) => {
+    t.classList.toggle("active", t.dataset.view === "matches");
+    t.setAttribute("aria-selected", t.dataset.view === "matches");
+  });
+  document.querySelectorAll(".view").forEach((v) => (v.hidden = v.id !== "view-match"));
+  document.body.dataset.view = "match";
+  scrollTo(0, 0);
+  $("#match-detail").innerHTML = `<div class="card empty">Loading…</div>`;
+  renderMatch(id).catch((err) => {
+    console.error(err);
+    $("#match-detail").innerHTML = `<div class="card empty">Match details are not available right now.</div>`;
+  });
+}
+
+$("#match-back").addEventListener("click", () => {
+  if (history.state?.fromList) history.back();
+  else showView("matches");
+});
 
 /* ---------- Statistics ---------- */
 
@@ -1427,6 +1652,7 @@ async function loadStats() {
     const id = seasonIndex.length ? setupSeasonPicker(seasonIndex) : null;
     const startView = location.hash.slice(1);
     if (["matches", "stats", "sim", "club"].includes(startView)) showView(startView);
+    else if (startView.startsWith("match-")) openMatch(Number(startView.slice(6)), false);
     await loadSeason(id);
   } catch (err) {
     showError(err);
