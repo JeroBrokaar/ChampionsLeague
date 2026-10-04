@@ -222,7 +222,9 @@ body[data-view="club"] .season-select,
 body[data-view="match"] .season-select { visibility: hidden; }
 
 /* Clickable match rows (Matches tab) */
-.match.clickable { cursor: pointer; }
+.match.clickable, .fixture-row.clickable, .next-match.clickable { cursor: pointer; }
+.fixture-row.clickable:hover, .fixture-row.clickable:focus-visible { background: var(--row-hover); outline: none; }
+.next-match.clickable:hover, .next-match.clickable:focus-visible { background: var(--row-hover); outline: none; }
 .match.clickable:hover, .match.clickable:focus-visible { background: var(--row-hover); outline: none; }
 
 /* Match detail */

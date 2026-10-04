@@ -335,10 +335,12 @@ function onMatchActivate(e) {
   const el = e.target.closest("[data-match]");
   if (!el || (e.type === "keydown" && e.key !== "Enter" && e.key !== " ")) return;
   e.preventDefault();
-  openMatch(Number(el.dataset.match), true);
+  openMatch(Number(el.dataset.match), true, e.currentTarget.id === "club-body" ? "club" : "matches");
 }
-$("#match-list").addEventListener("click", onMatchActivate);
-$("#match-list").addEventListener("keydown", onMatchActivate);
+for (const id of ["match-list", "club-body"]) {
+  $(`#${id}`).addEventListener("click", onMatchActivate);
+  $(`#${id}`).addEventListener("keydown", onMatchActivate);
+}
 
 window.addEventListener("popstate", () => {
   const h = location.hash.slice(1);
@@ -732,13 +734,13 @@ function fixtureLine(m, id, posOf, big) {
   const time = when.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   const extra = posOf.get(opp.id) ? `${ordinal(posOf.get(opp.id))} now` : "";
   if (big) {
-    return `<div class="next-match">
+    return `<div class="next-match clickable" data-match="${m.id}" role="button" tabindex="0" aria-label="Match details">
       <div class="next-opp">${crest(opp.crest)}<div><div class="next-name">${home ? "vs" : "at"} ${esc(opp.name)}</div>
         <div class="next-meta">${home ? "Home" : "Away"} · ${esc(stageLabel(m))}${extra ? ` · ${esc(extra)}` : ""}</div></div></div>
       <div class="next-when"><b>${esc(date)}</b><span>${time}</span></div>
     </div>`;
   }
-  return `<div class="fixture-row">
+  return `<div class="fixture-row clickable" data-match="${m.id}" role="button" tabindex="0" aria-label="Match details">
     <span class="fx-when">${esc(date)}</span>
     <span class="fx-ha ${home ? "h" : "a"}">${home ? "H" : "A"}</span>
     <span class="fx-opp">${crest(opp.crest)}${esc(opp.shortName || opp.name)}</span>
@@ -799,7 +801,7 @@ function renderClub(id) {
         const mine = home ? h : a, theirs = home ? a : h;
         const outcome = mine > theirs ? "win" : mine < theirs ? "loss" : "draw";
         const pens = m.score.pens ? ` <small class="muted">pens ${m.score.pens.home}–${m.score.pens.away}</small>` : "";
-        return `<div class="fixture-row result-row">
+        return `<div class="fixture-row result-row clickable" data-match="${m.id}" role="button" tabindex="0" aria-label="Match details">
           <span class="fx-when">${esc(shortDate(m.utcDate))}</span>
           <span class="fx-ha ${home ? "h" : "a"}">${home ? "H" : "A"}</span>
           <span class="fx-opp">${crest(opp.crest)}${esc(opp.shortName || opp.name)}</span>
@@ -1077,11 +1079,13 @@ async function renderMatch(id) {
   }));
 }
 
-function openMatch(id, push) {
-  if (push) history.pushState({ fromList: true }, "", `${location.pathname}${location.search}#match-${id}`);
+function openMatch(id, push, from = "matches") {
+  if (push) history.pushState({ fromList: true, from }, "", `${location.pathname}${location.search}#match-${id}`);
+  const origin = history.state?.from || "matches";
+  $("#match-back").textContent = origin === "club" ? "‹ Back to club" : "‹ Back to matches";
   document.querySelectorAll(".tab").forEach((t) => {
-    t.classList.toggle("active", t.dataset.view === "matches");
-    t.setAttribute("aria-selected", t.dataset.view === "matches");
+    t.classList.toggle("active", t.dataset.view === origin);
+    t.setAttribute("aria-selected", t.dataset.view === origin);
   });
   document.querySelectorAll(".view").forEach((v) => (v.hidden = v.id !== "view-match"));
   document.body.dataset.view = "match";
