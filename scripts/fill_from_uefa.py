@@ -55,8 +55,14 @@ def main(path, tab, comp, season, write):
             by_date[str(d + timedelta(days=off))].append(g)
 
     name_map, used, pairs = {}, set(), {}
-    # Pass 1: rows where both names look alike; pass 2: one name already known, the other inferred.
-    for strict in (True, False):
+    # Pass 1: rows where both names look alike; then repeat pass 2 (one name already known,
+    # the other inferred) until nothing new is found, since each match can teach a new name.
+    passes, before = [True, False], -1
+    while passes:
+        strict = passes.pop(0)
+        if not strict and len(pairs) != before:
+            before = len(pairs)
+            passes.append(False)
         for i, date, home, away in rows:
             if i in pairs:
                 continue
