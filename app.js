@@ -866,11 +866,12 @@ function renderClub(id) {
   // Previous seasons, oldest first (the latest season sits at the bottom)
   const pastHtml = past.slice().reverse().map((s) => {
     const i = s.table.findIndex((r) => r.team.id === id);
-    if (i === -1) return `<div class="past-row"><span class="past-season">${esc(s.meta.label)}</span><span class="muted">Did not take part</span></div>`;
+    if (i === -1) return `<div class="past-row"><span class="past-season">${esc(s.meta.label)}</span><span class="cl-icon off" aria-hidden="true"></span><span class="muted">Did not take part</span></div>`;
     const res = finalResults(s.matches);
     const key = res ? res.get(id) || "LEAGUE" : null;
     return `<div class="past-row">
       <span class="past-season">${esc(s.meta.label)}</span>
+      <span class="cl-icon" title="Played in the Champions League" aria-label="Played in the Champions League">★</span>
       <span class="pchip ${posZone(i + 1)}">${i + 1}</span>
       <span class="past-pts">${s.table[i].points} pts</span>
       ${key ? `<span class="result ${RESULT[key].cls}">${RESULT[key].label}</span>` : ""}
