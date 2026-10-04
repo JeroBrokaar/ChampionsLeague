@@ -352,7 +352,7 @@ body[data-view="match"] .season-select { visibility: hidden; }
 .honour-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; }
 .honour-head b { font-size: 22px; font-weight: 800; }
 .honour.won .honour-head b { color: var(--accent); }
-.honour-head span { font-weight: 700; }
+.honour-head span { font-weight: 600; font-size: 13px; }
 .honour.lost .honour-head span { color: var(--muted); }
 .final-years { display: flex; flex-wrap: wrap; gap: 4px; }
 .final-year { font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; padding: 2px 6px; border-radius: 4px; cursor: default; }

@@ -710,28 +710,24 @@ async function loadClubData() {
 // "2024" for season "2023/24": finals are usually referred to by the year they were played.
 const finalYear = (season) => String(Number(season.slice(0, 4)) + 1);
 
-// One block per European cup the club has reached a final of.
+// Titles first (one line per cup), then lost finals (one line per cup).
 function honoursHtml(id, competitions) {
-  const blocks = competitions.map((c) => {
-    const html = competitionHonours(id, c.finals);
-    return html ? `<h3 class="sub-head">${esc(c.title)} finals</h3>${html}` : "";
-  }).join("");
-  return blocks || `<p class="empty-note">No European cup final yet.</p>`;
-}
-
-function competitionHonours(id, finals) {
-  const won = finals.filter((f) => f.winner.id === id);
-  const lost = finals.filter((f) => f.runnerUp.id === id);
-  if (!won.length && !lost.length) return "";
   const years = (list, key) => list.map((f) => {
     const other = key === "winner" ? f.runnerUp.name : f.winner.name;
     return `<span class="final-year" title="${esc(f.season)} final: ${key === "winner" ? "beat" : "lost to"} ${esc(other)}">${finalYear(f.season)}</span>`;
   }).join("");
-  const line = (cls, label, list, key) => list.length ? `<div class="honour ${cls}">
-      <div class="honour-head"><b>${list.length}×</b><span>${label}</span></div>
-      <div class="final-years">${years(list, key)}</div>
-    </div>` : "";
-  return line("won", "Winner", won, "winner") + line("lost", "Runner-up", lost, "runnerUp");
+  const group = (cls, heading, key) => {
+    const lines = competitions.map((c) => {
+      const list = c.finals.filter((f) => f[key].id === id);
+      return list.length ? `<div class="honour ${cls}">
+          <div class="honour-head"><b>${list.length}×</b><span>${esc(c.title)}</span></div>
+          <div class="final-years">${years(list, key)}</div>
+        </div>` : "";
+    }).join("");
+    return lines ? `<h3 class="sub-head">${heading}</h3>${lines}` : "";
+  };
+  const html = group("won", "Winner", "winner") + group("lost", "Runner-up", "runnerUp");
+  return html || `<p class="empty-note">No European cup final yet.</p>`;
 }
 
 function stageLabel(m) {
