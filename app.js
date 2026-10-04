@@ -1033,6 +1033,11 @@ function teamFacts(team, hist, venue, oppCountry, countryOf) {
     if (c) facts.push(c);
   }
 
+  // No draws at all in this format (penalty shoot-outs count as draws)
+  if (hist.length >= 10 && hist.every((g) => g.res !== "D")) {
+    add("draws", hist.length / 4, `Every one of ${name}'s ${hist.length} matches in this format had a winner: no draws.`);
+  }
+
   // Scoring and defence
   const scored = streak(hist, (g) => g.gf > 0), blank = streak(hist, (g) => g.gf === 0), clean = streak(hist, (g) => g.ga === 0);
   if (scored >= 6) add("goals", scored / 2, `${name} scored in each of their last ${scored} matches.`);
