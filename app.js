@@ -909,7 +909,7 @@ function teamHistory(id, seasons, before) {
       const { home: h, away: a } = m.score.fullTime;
       const gf = home ? h : a, ga = home ? a : h;
       const opp = home ? m.awayTeam : m.homeTeam;
-      out.push({ m, home, gf, ga, opp, res: gf > ga ? "W" : gf < ga ? "L" : "D", oppTop8: (posOf.get(opp.id) || 99) <= 8, final: m.stage === "FINAL" });
+      out.push({ m, home, gf, ga, opp, season: s.meta.label, res: gf > ga ? "W" : gf < ga ? "L" : "D", oppTop8: (posOf.get(opp.id) || 99) <= 8, final: m.stage === "FINAL" });
     }
   }
   return out.sort((x, y) => y.m.utcDate.localeCompare(x.m.utcDate));
@@ -968,11 +968,22 @@ function teamFacts(team, hist, venue) {
   return facts.sort((a, b) => b.score - a.score).slice(0, 3);
 }
 
+// Last 5 results, oldest first, grouped by season ("25/26 | 26/27").
 function formChips(hist) {
-  return hist.slice(0, 5).reverse().map((g) => {
-    const cls = g.res === "W" ? "win" : g.res === "L" ? "loss" : "draw";
-    return `<span class="res ${cls}" title="${g.home ? "vs" : "at"} ${esc(g.opp.shortName || g.opp.name)} ${g.m.score.fullTime.home}–${g.m.score.fullTime.away} · ${shortDate(g.m.utcDate)}">${g.res}</span>`;
-  }).join("") || `<span class="muted">No matches yet</span>`;
+  const last = hist.slice(0, 5).reverse();
+  if (!last.length) return `<span class="muted">No matches yet</span>`;
+  const groups = [];
+  for (const g of last) {
+    if (!groups.length || groups[groups.length - 1].season !== g.season) groups.push({ season: g.season, games: [] });
+    groups[groups.length - 1].games.push(g);
+  }
+  return groups.map((grp) => `<span class="form-group">
+      <span class="form-chips">${grp.games.map((g) => {
+        const cls = g.res === "W" ? "win" : g.res === "L" ? "loss" : "draw";
+        return `<span class="res ${cls}" title="${g.home ? "vs" : "at"} ${esc(g.opp.shortName || g.opp.name)} ${g.m.score.fullTime.home}–${g.m.score.fullTime.away} · ${shortDate(g.m.utcDate)}">${g.res}</span>`;
+      }).join("")}</span>
+      <small>${esc(grp.season.slice(2))}</small>
+    </span>`).join("");
 }
 
 function compareRows(a, b) {
@@ -1042,13 +1053,15 @@ async function renderMatch(id) {
     <div class="card stat-card wide md-head">
       <div class="md-round">${esc(stageLabel(m))} · ${esc(season.meta.label)}</div>
       <div class="md-teams">
-        <a class="md-team" href="${clubHref(H.id)}" data-club="${H.id}" title="Open club page">${H.crest ? `<img src="${esc(H.crest)}" alt="">` : ""}<b>${tname(H)}</b><span>${posText(H)}</span></a>
+        <div class="md-side">
+          <a class="md-team" href="${clubHref(H.id)}" data-club="${H.id}" title="Open club page">${H.crest ? `<img src="${esc(H.crest)}" alt="">` : ""}<b>${tname(H)}</b><span>${posText(H)}</span></a>
+          <div class="md-form" aria-label="Last 5 matches">${formChips(hHist)}</div>
+        </div>
         <div class="md-centre">${centre}</div>
-        <a class="md-team" href="${clubHref(A.id)}" data-club="${A.id}" title="Open club page">${A.crest ? `<img src="${esc(A.crest)}" alt="">` : ""}<b>${tname(A)}</b><span>${posText(A)}</span></a>
-      </div>
-      <div class="md-form">
-        <div><span class="md-form-label">Form</span>${formChips(hHist)}</div>
-        <div>${formChips(aHist)}</div>
+        <div class="md-side">
+          <a class="md-team" href="${clubHref(A.id)}" data-club="${A.id}" title="Open club page">${A.crest ? `<img src="${esc(A.crest)}" alt="">` : ""}<b>${tname(A)}</b><span>${posText(A)}</span></a>
+          <div class="md-form" aria-label="Last 5 matches">${formChips(aHist)}</div>
+        </div>
       </div>
     </div>
     <div class="card stat-card wide">

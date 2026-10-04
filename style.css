@@ -247,10 +247,15 @@ body[data-view="match"] .season-select { visibility: hidden; }
 .md-score.live { color: var(--loss); }
 .md-time { font-size: 32px; font-weight: 800; font-variant-numeric: tabular-nums; }
 .md-sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
-.md-form { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding-top: 14px; margin-top: 10px; border-top: 1px solid var(--line); }
-.md-form > div { display: flex; justify-content: center; align-items: center; gap: 4px; }
-.md-form .res { display: inline-grid; place-items: center; width: 22px; height: 22px; padding: 0; font-size: 11px; }
-.md-form-label { display: none; }
+.md-side { display: flex; flex-direction: column; align-items: center; gap: 10px; min-width: 0; }
+.md-teams { align-items: start; }
+.md-centre { align-self: center; }
+.md-form { display: flex; justify-content: center; align-items: flex-start; }
+.form-group { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 0 8px; }
+.form-group + .form-group { border-left: 1px solid var(--line); }
+.form-chips { display: flex; gap: 4px; }
+.form-chips .res { display: inline-grid; place-items: center; width: 22px; height: 22px; padding: 0; font-size: 11px; }
+.form-group small { color: var(--muted); font-size: 10px; font-weight: 600; letter-spacing: .03em; }
 .facts { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
 .facts li { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: var(--bg); border-radius: 8px; font-size: 14px; }
 .facts .crest { width: 22px; height: 22px; }
@@ -276,6 +281,10 @@ body[data-view="match"] .season-select { visibility: hidden; }
   .md-score { font-size: 32px; }
   .md-time { font-size: 24px; }
   .md-centre { min-width: 84px; }
+  .md-teams { gap: 8px; }
+  .form-group { padding: 0 4px; }
+  .form-chips { gap: 2px; }
+  .form-chips .res { width: 17px; height: 17px; font-size: 10px; }
   .h2h-row { grid-template-columns: 1fr; gap: 2px; }
 }
 
