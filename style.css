@@ -347,6 +347,17 @@ body[data-view="match"] .season-select { visibility: hidden; }
 .result-row { grid-template-columns: 64px 24px 1fr auto auto; }
 .fx-score { white-space: nowrap; }
 .fx-score .res { display: inline-block; font-size: 12px; padding: 3px 7px; }
+.honour { padding: 8px 0 10px; }
+.honour + .honour { border-top: 1px solid var(--line); }
+.honour-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; }
+.honour-head b { font-size: 22px; font-weight: 800; }
+.honour.won .honour-head b { color: var(--accent); }
+.honour-head span { font-weight: 700; }
+.honour.lost .honour-head span { color: var(--muted); }
+.final-years { display: flex; flex-wrap: wrap; gap: 4px; }
+.final-year { font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; padding: 2px 6px; border-radius: 4px; cursor: default; }
+.honour.won .final-year { background: var(--accent); color: #1a1500; }
+.honour.lost .final-year { border: 1px solid var(--line); color: var(--muted); }
 .past-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); }
 .past-row:last-child { border-bottom: 0; }
 .past-season { width: 64px; font-weight: 700; }

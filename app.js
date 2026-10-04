@@ -690,8 +690,36 @@ async function loadClubData() {
   }
   const clubs = new Map();
   for (const s of seasons) for (const r of s.table) if (!clubs.has(r.team.id)) clubs.set(r.team.id, r.team);
-  clubData = { seasons, clubs, countryOf };
+  // All finals: the historical list, plus finals from seasons in our data that it doesn't have yet.
+  const finals = (await loadJson("finals.json").catch(() => ({ finals: [] }))).finals || [];
+  const listed = new Set(finals.map((f) => f.season));
+  for (const s of seasons) {
+    const final = s.matches.find((m) => m.stage === "FINAL" && m.status === "FINISHED");
+    if (!final || listed.has(s.meta.label)) continue;
+    const homeWon = final.score.winner === "HOME_TEAM";
+    const [w, r] = homeWon ? [final.homeTeam, final.awayTeam] : [final.awayTeam, final.homeTeam];
+    finals.push({ season: s.meta.label, winner: { name: w.shortName, id: w.id }, runnerUp: { name: r.shortName, id: r.id } });
+  }
+  clubData = { seasons, clubs, countryOf, finals };
   return clubData;
+}
+
+// "2024" for season "2023/24": finals are usually referred to by the year they were played.
+const finalYear = (season) => String(Number(season.slice(0, 4)) + 1);
+
+function honoursHtml(id, finals) {
+  const won = finals.filter((f) => f.winner.id === id);
+  const lost = finals.filter((f) => f.runnerUp.id === id);
+  if (!won.length && !lost.length) return `<p class="empty-note">No European Cup or Champions League final yet.</p>`;
+  const years = (list, key) => list.map((f) => {
+    const other = key === "winner" ? f.runnerUp.name : f.winner.name;
+    return `<span class="final-year" title="${esc(f.season)} final: ${key === "winner" ? "beat" : "lost to"} ${esc(other)}">${finalYear(f.season)}</span>`;
+  }).join("");
+  const line = (cls, label, list, key) => list.length ? `<div class="honour ${cls}">
+      <div class="honour-head"><b>${list.length}×</b><span>${label}</span></div>
+      <div class="final-years">${years(list, key)}</div>
+    </div>` : "";
+  return line("won", "Winner", won, "winner") + line("lost", "Runner-up", lost, "runnerUp");
 }
 
 function stageLabel(m) {
@@ -827,8 +855,8 @@ function renderClub(id) {
       }).join("")
     : `<p class="empty-note">${row ? "No matches played yet." : "Not taking part this season."}</p>`;
 
-  // Previous seasons
-  const pastHtml = past.map((s) => {
+  // Previous seasons, oldest first (the latest season sits at the bottom)
+  const pastHtml = past.slice().reverse().map((s) => {
     const i = s.table.findIndex((r) => r.team.id === id);
     if (i === -1) return `<div class="past-row"><span class="past-season">${esc(s.meta.label)}</span><span class="muted">Did not take part</span></div>`;
     const res = finalResults(s.matches);
@@ -859,6 +887,9 @@ function renderClub(id) {
     </div>
     <div class="card stat-card">
       <h2>Previous seasons</h2>
+      <h3 class="sub-head first">European Cup &amp; Champions League finals</h3>
+      ${honoursHtml(id, clubData.finals)}
+      <h3 class="sub-head">Recent seasons</h3>
       <p class="hint">League-phase position and how far the club got.</p>
       ${pastHtml || `<p class="empty-note">No earlier seasons in this format.</p>`}
     </div>
