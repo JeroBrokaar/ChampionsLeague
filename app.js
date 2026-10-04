@@ -957,8 +957,11 @@ function renderClub(id) {
     </div>`;
 }
 
+// The chosen club is remembered per competition (clubs differ between them).
+const CLUB_KEY = `club-${COMP.key}`;
+
 function chooseClub(id) {
-  try { localStorage.setItem("club", String(id)); } catch {}
+  try { localStorage.setItem(CLUB_KEY, String(id)); } catch {}
   const params = new URLSearchParams(location.search);
   params.set("club", id);
   history.replaceState(null, "", `${location.pathname}?${params}${location.hash}`);
@@ -982,7 +985,8 @@ async function loadClub() {
       (earlier.length ? `<optgroup label="Earlier seasons">${earlier.map(opt).join("")}</optgroup>` : "");
 
     let saved = null;
-    try { saved = localStorage.getItem("club"); } catch {}
+    // Older versions stored one club for everything under "club"; keep using it for the Champions League.
+    try { saved = localStorage.getItem(CLUB_KEY) ?? (COMP.key === "cl" ? localStorage.getItem("club") : null); } catch {}
     const wanted = Number(new URLSearchParams(location.search).get("club") || saved);
     const id = clubs.has(wanted) ? wanted : current.table[0]?.team.id;
     select.value = String(id);
