@@ -27,6 +27,15 @@ function crest(url) {
   return url ? `<img class="crest" src="${esc(url)}" alt="" loading="lazy">` : `<span class="crest"></span>`;
 }
 
+/* ---------- Feature switches ---------- */
+
+// The simulation is paused for now. Each part can be switched back on separately.
+const FEATURES = {
+  simulationTab: false, // the Simulation tab
+  tablePredictions: false, // Top 8 / Top 24 columns in the table
+  matchOddsBars: false, // home/draw/away bars under upcoming matches
+};
+
 /* ---------- Competition (switch at the top: ?comp=el / ?comp=ecl) ---------- */
 
 const COMPS = {
@@ -351,7 +360,7 @@ function showView(view) {
   document.body.dataset.view = view;
   history.replaceState(null, "", `${location.pathname}${location.search}${view === "table" ? "" : `#${view}`}`);
   if (view === "stats") loadStats();
-  if (view === "sim") loadSim();
+  if (view === "sim" && FEATURES.simulationTab) loadSim();
   if (view === "club") loadClub();
 }
 document.querySelectorAll(".tab").forEach((t) => t.addEventListener("click", () => showView(t.dataset.view)));
@@ -371,7 +380,7 @@ for (const id of ["match-list", "club-body"]) {
 window.addEventListener("popstate", () => {
   const h = location.hash.slice(1);
   if (h.startsWith("match-")) openMatch(Number(h.slice(6)), false);
-  else showView(["matches", "stats", "sim", "club"].includes(h) ? h : "table");
+  else showView(["matches", "stats", "club", ...(FEATURES.simulationTab ? ["sim"] : [])].includes(h) ? h : "table");
   const club = Number(new URLSearchParams(location.search).get("club"));
   if (h === "club" && clubLoaded && club && clubData?.clubs.has(club)) {
     $("#club-select").value = String(club);
@@ -433,10 +442,10 @@ async function loadSeason(id) {
   const status = clinchStatus(table);
   // Predictions only while the league phase is running.
   let preds = null;
-  if (status && pots) {
+  if (status && pots && (FEATURES.tablePredictions || FEATURES.matchOddsBars)) {
     const result = await seasonSimulation(String(s));
-    if (result?.sim) preds = new Map(result.sim.teams.map((t) => [t.team.id, t]));
-    matchOddsById = new Map((result?.sim?.games || []).map((g) => [g.m.id, g.o]));
+    if (result?.sim && FEATURES.tablePredictions) preds = new Map(result.sim.teams.map((t) => [t.team.id, t]));
+    matchOddsById = FEATURES.matchOddsBars ? new Map((result?.sim?.games || []).map((g) => [g.m.id, g.o])) : new Map();
   } else {
     matchOddsById = new Map();
   }
@@ -1783,6 +1792,7 @@ function setupCompetition() {
     : `<th class="pot-start" title="Opponent from this pot, home (H) or away (A)">Opp.</th>`).join("");
 }
 setupCompetition();
+if (!FEATURES.simulationTab) document.querySelector('.tab[data-view="sim"]').hidden = true;
 
 /* ---------- Boot ---------- */
 
@@ -1794,7 +1804,7 @@ setupCompetition();
     seasonIndex = index?.seasons || [];
     const id = seasonIndex.length ? setupSeasonPicker(seasonIndex) : null;
     const startView = location.hash.slice(1);
-    if (["matches", "stats", "sim", "club"].includes(startView)) showView(startView);
+    if (["matches", "stats", "club", ...(FEATURES.simulationTab ? ["sim"] : [])].includes(startView)) showView(startView);
     else if (startView.startsWith("match-")) openMatch(Number(startView.slice(6)), false);
     await loadSeason(id);
   } catch (err) {
