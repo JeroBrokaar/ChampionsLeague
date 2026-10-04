@@ -88,8 +88,9 @@ tr.cut td { border-bottom: 2px dashed var(--line); }
 .crest { width: 22px; height: 22px; object-fit: contain; flex: none; }
 .team-name { font-weight: 600; white-space: nowrap; }
 .standings .pts { font-weight: 800; }
-td.gd-pos { color: var(--win); }
-td.gd-neg { color: var(--loss); }
+/* Goals are secondary to points and results */
+.standings td.goals { color: var(--muted); font-size: 13px; }
+.standings th.goals { opacity: .75; }
 
 .form { display: inline-flex; gap: 3px; }
 .form i {

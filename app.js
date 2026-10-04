@@ -202,7 +202,6 @@ function renderTable(rows, grid, status, results, preds) {
     return;
   }
   body.innerHTML = rows.map((r, i) => {
-    const gdClass = r.goalDifference > 0 ? "gd-pos" : r.goalDifference < 0 ? "gd-neg" : "";
     const gd = r.goalDifference > 0 ? `+${r.goalDifference}` : r.goalDifference;
     // Use the row index, not r.position: tied teams share a position in the data.
     const cut = i === 7 || i === 23 ? " cut" : "";
@@ -215,9 +214,9 @@ function renderTable(rows, grid, status, results, preds) {
       <td>${r.won}</td>
       <td>${r.draw}</td>
       <td>${r.lost}</td>
-      <td class="hide-sm">${r.goalsFor}</td>
-      <td class="hide-sm">${r.goalsAgainst}</td>
-      <td class="${gdClass}">${gd}</td>
+      <td class="hide-sm goals">${r.goalsFor}</td>
+      <td class="hide-sm goals">${r.goalsAgainst}</td>
+      <td class="goals">${gd}</td>
       <td class="pts">${r.points}</td>
       ${preds ? predCells(preds.get(r.team.id)) : ""}
       ${resultCell(results, r.team.id)}
