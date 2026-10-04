@@ -957,13 +957,13 @@ function countryFact(name, hist, country, countryOf) {
   const games = hist.filter((g) => countryOf.get(g.opp.id) === country);
   if (games.length < 3) return null;
   const r = recordOf(games);
-  const from = `teams from ${country}`;
-  if (r.l === 0) return { score: games.length + 1, text: `${name} have never lost against ${from} in this format (${games.length} games).` };
-  if (r.w === 0) return { score: games.length + 1, text: `${name} have never beaten ${from} in this format (${games.length} games).` };
+  const teams = `teams from ${country}`, aTeam = `a team from ${country}`;
+  if (r.l === 0) return { score: games.length + 1, text: `${name} have never lost against ${teams} in this format (${games.length} games).` };
+  if (r.w === 0) return { score: games.length + 1, text: `${name} have never beaten ${aTeam} in this format (${games.length} games).` };
   const lastLoss = games.find((g) => g.res === "L"), sinceLoss = games.indexOf(lastLoss);
-  if (sinceLoss >= 3) return { score: sinceLoss, text: `${name} haven't lost against ${from} since ${longDate(lastLoss.m.utcDate)} (${sinceLoss} games).` };
+  if (sinceLoss >= 3) return { score: sinceLoss, text: `${name} haven't lost against ${aTeam} since ${longDate(lastLoss.m.utcDate)} (${sinceLoss} games).` };
   const lastWin = games.find((g) => g.res === "W"), sinceWin = games.indexOf(lastWin);
-  if (sinceWin >= 3) return { score: sinceWin, text: `${name} haven't beaten ${from} since ${longDate(lastWin.m.utcDate)} (${sinceWin} games).` };
+  if (sinceWin >= 3) return { score: sinceWin, text: `${name} haven't beaten ${aTeam} since ${longDate(lastWin.m.utcDate)} (${sinceWin} games).` };
   return null;
 }
 
