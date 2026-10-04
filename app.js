@@ -752,6 +752,28 @@ function renderClub(id) {
       (upcoming.length > 1 ? `<h3 class="sub-head">After that</h3>${upcoming.slice(1).map((m) => fixtureLine(m, id, potOf, posOf, false)).join("")}` : "")
     : `<p class="empty-note">${row ? "No upcoming matches scheduled." : "Not taking part this season."}</p>`;
 
+  // Results this season (oldest first), coloured from the club's point of view
+  const played = current.matches
+    .filter((m) => m.status === "FINISHED" && (m.homeTeam?.id === id || m.awayTeam?.id === id))
+    .sort((a, b) => a.utcDate.localeCompare(b.utcDate));
+  const resultsHtml = played.length
+    ? played.map((m) => {
+        const home = m.homeTeam.id === id;
+        const opp = home ? m.awayTeam : m.homeTeam;
+        const { home: h, away: a } = m.score.fullTime;
+        const mine = home ? h : a, theirs = home ? a : h;
+        const outcome = mine > theirs ? "win" : mine < theirs ? "loss" : "draw";
+        const pens = m.score.pens ? ` <small class="muted">pens ${m.score.pens.home}–${m.score.pens.away}</small>` : "";
+        return `<div class="fixture-row result-row">
+          <span class="fx-when">${esc(shortDate(m.utcDate))}</span>
+          <span class="fx-ha ${home ? "h" : "a"}">${home ? "H" : "A"}</span>
+          <span class="fx-opp">${crest(opp.crest)}${esc(opp.shortName || opp.name)}</span>
+          <span class="fx-score"><span class="res ${outcome}">${h}–${a}</span>${pens}</span>
+          <span class="fx-extra">${esc(stageLabel(m))}</span>
+        </div>`;
+      }).join("")
+    : `<p class="empty-note">${row ? "No matches played yet." : "Not taking part this season."}</p>`;
+
   // Previous seasons
   const pastHtml = past.map((s) => {
     const i = s.table.findIndex((r) => r.team.id === id);
@@ -774,6 +796,10 @@ function renderClub(id) {
       ${team.crest ? `<img class="club-crest" src="${esc(team.crest)}" alt="">` : ""}
       <div class="club-title"><h2>${esc(team.name)}</h2><p class="hint">${esc(current.meta.label)} · League phase</p></div>
       ${nowHtml}
+    </div>
+    <div class="card stat-card">
+      <h2>Results this season</h2>
+      ${resultsHtml}
     </div>
     <div class="card stat-card">
       <h2>Next match</h2>
