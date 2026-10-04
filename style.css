@@ -373,6 +373,20 @@ body[data-view="match"] .season-select { visibility: hidden; }
 .past-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); }
 .past-row:last-child { border-bottom: 0; }
 .past-season { width: 64px; font-weight: 700; }
+.comp-sticker {
+  flex: none; width: 132px; text-align: center; font-size: 11px; font-weight: 700; letter-spacing: .02em;
+  padding: 3px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--text); white-space: nowrap;
+}
+.comp-sticker.cl { border-color: var(--accent); color: var(--accent); }
+.comp-sticker.el { border-color: #a1a1aa; }
+.comp-sticker.ecl { border-color: #52525b; color: #a1a1aa; }
+.comp-sticker.none { color: var(--muted); }
+.comp-sticker .short { display: none; }
+@media (max-width: 600px) {
+  .comp-sticker { width: 44px; padding: 3px 4px; }
+  .comp-sticker .long { display: none; }
+  .comp-sticker .short { display: inline; }
+}
 .cl-icon {
   width: 22px; height: 22px; flex: none; display: grid; place-items: center; border-radius: 50%;
   font-size: 12px; line-height: 1; color: var(--accent); border: 1px solid var(--accent); cursor: default;

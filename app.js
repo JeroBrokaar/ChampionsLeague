@@ -741,7 +741,24 @@ async function loadClubData() {
     const [w, r] = homeWon ? [final.homeTeam, final.awayTeam] : [final.awayTeam, final.homeTeam];
     finals.push({ season: s.meta.label, winner: { name: w.shortName, id: w.id }, runnerUp: { name: r.shortName, id: r.id } });
   }
-  clubData = { seasons, clubs, countryOf, competitions };
+  // Past seasons of all three competitions, to show where a club played each season.
+  const elsewhere = {};
+  for (const meta of seasonIndex.filter((m) => !m.current)) {
+    elsewhere[meta.id] = {};
+    for (const c of Object.values(COMPS)) {
+      if (c === COMP) {
+        const own = seasons.find((x) => x.meta.id === meta.id);
+        elsewhere[meta.id][c.key] = { table: own.table, matches: own.matches };
+        continue;
+      }
+      try {
+        const [st, ma] = await Promise.all([loadJson(`${c.base}/${meta.id}/standings.json`), loadJson(`${c.base}/${meta.id}/matches.json`)]);
+        removeShootouts(ma);
+        elsewhere[meta.id][c.key] = { table: st.table || [], matches: ma.matches || [] };
+      } catch { /* that competition has no data for this season */ }
+    }
+  }
+  clubData = { seasons, clubs, countryOf, competitions, elsewhere };
   return clubData;
 }
 
@@ -755,8 +772,9 @@ const CLUB_ALIASES = { "man utd": "manchester united", "man city": "manchester c
   "leverkusen": "bayer leverkusen", "stuttgart": "vfb stuttgart", "frankfurt": "eintracht frankfurt", "salzburg": "austria salzburg" }; // finals list uses the 1994 name
 function clubKey(name) {
   let s = (name || "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
-  s = CLUB_ALIASES[s] || s;
-  return s.replace(/\b(fc|cf|ac|afc|sc|sk|fk|club|de|the|ssc|as|ss|kv|1)\b/g, " ").replace(/\s+/g, " ").trim();
+  const strip = (x) => x.replace(/\b(fc|cf|ac|afc|sc|sk|fk|club|de|the|ssc|as|ss|kv|1)\b/g, " ").replace(/\s+/g, " ").trim();
+  // Aliases are checked on the full and the stripped name ("FK Crvena Zvezda" -> "crvena zvezda").
+  return strip(CLUB_ALIASES[s] || CLUB_ALIASES[strip(s)] || s);
 }
 // Finals are stored with football-data ids; clubs from UEFA's data are matched by name.
 function sameClub(entry, team) {
@@ -767,7 +785,7 @@ function sameClub(entry, team) {
   return a === b || (a.startsWith(`${b} `) && b.length >= 4) || (b.startsWith(`${a} `) && a.length >= 4);
 }
 
-// Titles first (one line per cup), then lost finals (one line per cup).
+// European titles, one line per cup.
 function honoursHtml(team, competitions) {
   const years = (list, key) => list.map((f) => {
     const other = key === "winner" ? f.runnerUp.name : f.winner.name;
@@ -783,8 +801,8 @@ function honoursHtml(team, competitions) {
     }).join("");
     return lines ? `<h3 class="sub-head">${heading}</h3>${lines}` : "";
   };
-  const html = group("won", "Winner", "winner") + group("lost", "Runner-up", "runnerUp");
-  return html || `<p class="empty-note">No European cup final yet.</p>`;
+  const html = group("won", "Winner", "winner");
+  return html || `<p class="empty-note">No European title yet.</p>`;
 }
 
 function stageLabel(m) {
@@ -920,17 +938,26 @@ function renderClub(id) {
       }).join("")
     : `<p class="empty-note">${row ? "No matches played yet." : "Not taking part this season."}</p>`;
 
-  // Previous seasons, oldest first (the latest season sits at the bottom)
+  // Recent seasons, oldest first: which European competition the club played, and how it went.
+  const sameTeam = (a, b) => a.id === b.id || [a.name, a.shortName].some((n) => [b.name, b.shortName].some((m) => {
+    const x = clubKey(n), y = clubKey(m);
+    return x && y && (x === y || (x.startsWith(`${y} `) && y.length >= 4) || (y.startsWith(`${x} `) && x.length >= 4));
+  }));
   const pastHtml = past.slice().reverse().map((s) => {
-    const i = s.table.findIndex((r) => r.team.id === id);
-    if (i === -1) return `<div class="past-row"><span class="past-season">${esc(s.meta.label)}</span><span class="cl-icon off" aria-hidden="true"></span><span class="muted">Did not take part</span></div>`;
-    const res = finalResults(s.matches);
-    const key = res ? res.get(id) || "LEAGUE" : null;
+    const found = [COMP, ...Object.values(COMPS).filter((c) => c !== COMP)].map((c) => {
+      const d = clubData.elsewhere?.[s.meta.id]?.[c.key];
+      const i = d ? d.table.findIndex((r) => (c === COMP ? r.team.id === id : sameTeam(team, r.team))) : -1;
+      return i === -1 ? null : { c, d, i };
+    }).find(Boolean);
+    if (!found) return `<div class="past-row"><span class="past-season">${esc(s.meta.label)}</span><span class="comp-sticker none">–</span><span class="muted">No European league phase</span></div>`;
+    const { c, d, i } = found;
+    const res = finalResults(d.matches);
+    const key = res ? res.get(d.table[i].team.id) || "LEAGUE" : null;
     return `<div class="past-row">
       <span class="past-season">${esc(s.meta.label)}</span>
-      <span class="cl-icon" title="Played in the ${COMP.name}" aria-label="Played in the ${COMP.name}">★</span>
+      <span class="comp-sticker ${c.key}" title="${esc(c.name)}"><span class="long">${esc(c.name)}</span><span class="short">${c.key.toUpperCase()}</span></span>
       <span class="pchip ${posZone(i + 1)}">${i + 1}</span>
-      <span class="past-pts">${s.table[i].points} pts</span>
+      <span class="past-pts">${d.table[i].points} pts</span>
       ${key ? `<span class="result ${RESULT[key].cls}">${RESULT[key].label}</span>` : ""}
     </div>`;
   }).join("");
