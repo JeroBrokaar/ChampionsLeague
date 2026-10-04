@@ -40,7 +40,7 @@ def field(block, key):
 def matches(text):
     """(date, top-level heading, sub heading, home, away) for every match box, in page order."""
     out, headings = [], {}
-    pattern = re.compile(r"^(={2,4})\s*(.+?)\s*\1\s*$|\{\{(?:#invoke:)?Football box(?:\|main)?\s*\n(.*?)\n\}\}", re.M | re.S)
+    pattern = re.compile(r"^(={2,4})\s*(.+?)\s*\1\s*$|\{\{(?:#invoke:)?[Ff]ootball box(?:\|main)?\s*\n(.*?)\n\}\}", re.M | re.S)
     for m in pattern.finditer(text):
         if m.group(1):
             level = len(m.group(1))

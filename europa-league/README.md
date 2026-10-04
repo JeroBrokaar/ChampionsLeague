@@ -1,21 +1,24 @@
-# Europa League score sheets
+# Europa League & Conference League results
 
-Hand-entered results for the Europa League. Not used by the website yet.
+Hand-entered results, not used by the website yet.
 
 | File | Contents |
 |---|---|
-| `2025-26.csv` | All 189 matches of 2025/26: league phase, play-offs, Round of 16, quarter-finals, semi-finals, final |
-| `2026-27.csv` | The 144 league-phase matches of 2026/27 (knockout rows are added once they are drawn) |
-| `pots.csv` | The league-phase draw pots per season |
+| `uefa-results-2024-25_2025-26.xlsx` | **Main file.** One tab per competition and season: Europa League 2024/25 and 2025/26, Conference League 2024/25 and 2025/26 (league phase, play-offs, Round of 16, quarter-finals, semi-finals, final), plus a Pots tab and a progress counter |
+| `2025-26.csv`, `2026-27.csv`, `pots.csv` | Earlier CSV sheets for the Europa League. 2025/26 is also in the Excel file - fill in one of the two, not both |
 
 ## Filling in
 
-Open a sheet in Excel or Google Sheets and type the score in **Home goals** and **Away goals**. Leave both empty for matches not played yet.
+Open the Excel file and type the scores in the **yellow** cells (Home goals, Away goals). Leave both empty for a match not played.
 
 - Use the score **after extra time** if a knockout match went to extra time.
-- **Penalties winner**: only when a match or two-legged tie was decided on penalties, type the winning team's name exactly as it appears in the sheet. Otherwise leave it empty.
-- Don't change team names, dates or rounds, and keep the file as **CSV (UTF-8)** when saving.
+- **Penalties winner**: only when a match was decided on penalties - pick the team from the dropdown.
+- Don't change dates, rounds or team names.
+- The **How to fill in** tab shows an example row and how many matches per tab are still to do.
 
-## New season
+## Making new sheets
 
-`python scripts/el_fixtures_from_wikipedia.py 2027` creates `2027-28.csv` and adds that season's pots, using Wikipedia's fixture lists. It never overwrites a sheet that already exists.
+- `python scripts/uefa_results_workbook.py 2026 2027` - Excel file for other seasons (never overwrites an existing file)
+- `python scripts/el_fixtures_from_wikipedia.py 2027` - Europa League CSV for one season
+
+Fixtures and pots come from Wikipedia's season pages.
