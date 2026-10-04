@@ -81,7 +81,9 @@ h1 { margin: 0; font-size: clamp(22px, 5vw, 32px); font-weight: 800; letter-spac
 .standings tbody tr:hover { background: var(--row-hover); }
 
 .standings th.team, .standings td.team { text-align: left; }
-.standings .pos { width: 44px; position: relative; font-weight: 600; }
+/* Rank column has a fixed width; the sticky team column is pinned right next to it (same variable). */
+.standings { --pos-w: 44px; }
+.standings .pos { width: var(--pos-w); min-width: var(--pos-w); max-width: var(--pos-w); position: relative; font-weight: 600; }
 .standings td.pos::before {
   content: ""; position: absolute; left: 0; top: 6px; bottom: 6px;
   width: 4px; border-radius: 0 3px 3px 0; background: var(--zone, transparent);
@@ -165,6 +167,7 @@ tr.cut td { border-bottom: 2px dashed var(--line); }
   .hide-sm { display: none; }
   .standings { font-size: 13px; }
   .team-cell { min-width: 0; }
+  .standings { --pos-w: 34px; }
   .crest { width: 18px; height: 18px; }
   .match { gap: 8px; padding: 10px; }
   .side { gap: 6px; font-size: 14px; }
@@ -193,7 +196,7 @@ tr.cut td { border-bottom: 2px dashed var(--line); }
 /* Keep rank + team visible while scrolling sideways */
 .standings .sticky { position: sticky; z-index: 1; background: var(--surface); }
 .standings .pos.sticky { left: 0; }
-.standings .team.sticky { left: 44px; box-shadow: 1px 0 0 var(--line); }
+.standings .team.sticky { left: var(--pos-w); box-shadow: 1px 0 0 var(--line); }
 .standings tbody tr:hover .sticky { background: var(--row-hover); }
 
 /* Season picker */
