@@ -344,6 +344,11 @@ window.addEventListener("popstate", () => {
   const h = location.hash.slice(1);
   if (h.startsWith("match-")) openMatch(Number(h.slice(6)), false);
   else showView(["matches", "stats", "sim", "club"].includes(h) ? h : "table");
+  const club = Number(new URLSearchParams(location.search).get("club"));
+  if (h === "club" && clubLoaded && club && clubData?.clubs.has(club)) {
+    $("#club-select").value = String(club);
+    renderClub(club);
+  }
 });
 
 /* ---------- Seasons ---------- */
@@ -1035,9 +1040,9 @@ async function renderMatch(id) {
     <div class="card stat-card wide md-head">
       <div class="md-round">${esc(stageLabel(m))} · ${esc(season.meta.label)}</div>
       <div class="md-teams">
-        <div class="md-team">${H.crest ? `<img src="${esc(H.crest)}" alt="">` : ""}<b>${tname(H)}</b><span>${posText(H)}</span></div>
+        <a class="md-team" href="${clubHref(H.id)}" data-club="${H.id}" title="Open club page">${H.crest ? `<img src="${esc(H.crest)}" alt="">` : ""}<b>${tname(H)}</b><span>${posText(H)}</span></a>
         <div class="md-centre">${centre}</div>
-        <div class="md-team">${A.crest ? `<img src="${esc(A.crest)}" alt="">` : ""}<b>${tname(A)}</b><span>${posText(A)}</span></div>
+        <a class="md-team" href="${clubHref(A.id)}" data-club="${A.id}" title="Open club page">${A.crest ? `<img src="${esc(A.crest)}" alt="">` : ""}<b>${tname(A)}</b><span>${posText(A)}</span></a>
       </div>
       <div class="md-form">
         <div><span class="md-form-label">Form</span>${formChips(hHist)}</div>
@@ -1087,6 +1092,29 @@ function openMatch(id, push) {
     $("#match-detail").innerHTML = `<div class="card empty">Match details are not available right now.</div>`;
   });
 }
+
+function clubHref(id) {
+  const params = new URLSearchParams(location.search);
+  params.set("club", id);
+  return `${location.pathname}?${params}#club`;
+}
+
+// Go to the Club tab with this club selected (back button returns to the match).
+function openClub(id) {
+  history.pushState({ fromMatch: true }, "", clubHref(id));
+  showView("club");
+  if (clubLoaded) {
+    $("#club-select").value = String(id);
+    chooseClub(id);
+  }
+}
+
+$("#match-detail").addEventListener("click", (e) => {
+  const a = e.target.closest("[data-club]");
+  if (!a || e.ctrlKey || e.metaKey || e.shiftKey || e.button !== 0) return; // let new-tab clicks through
+  e.preventDefault();
+  openClub(Number(a.dataset.club));
+});
 
 $("#match-back").addEventListener("click", () => {
   if (history.state?.fromList) history.back();
