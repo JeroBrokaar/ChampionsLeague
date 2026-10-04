@@ -31,6 +31,7 @@ function crest(url) {
 const ABBR = { 5: "BAY", 81: "BAR", 5721: "BOD" };
 const abbr = (t) => ABBR[t.id] || t.tla || (t.shortName || t.name).slice(0, 3).toUpperCase();
 const SLOTS = ["1H", "1A", "2H", "2A", "3H", "3A", "4H", "4A"];
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
 const shortDate = (iso) => { const d = new Date(iso); return `${d.getDate()} ${MONTHS[d.getMonth()]}`; };
 
@@ -701,13 +702,13 @@ function recordTableHtml(rec) {
   </table>`;
 }
 
-function fixtureLine(m, id, potOf, posOf, big) {
+function fixtureLine(m, id, posOf, big) {
   const home = m.homeTeam.id === id;
   const opp = home ? m.awayTeam : m.homeTeam;
   const when = new Date(m.utcDate);
-  const date = `${when.toLocaleDateString([], { weekday: "short" })} ${shortDate(m.utcDate)}`;
+  const date = `${WEEKDAYS[when.getDay()]} ${shortDate(m.utcDate)}`;
   const time = when.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  const extra = [potOf[opp.id] ? `Pot ${potOf[opp.id]}` : "", posOf.get(opp.id) ? `${ordinal(posOf.get(opp.id))} now` : ""].filter(Boolean).join(" · ");
+  const extra = posOf.get(opp.id) ? `${ordinal(posOf.get(opp.id))} now` : "";
   if (big) {
     return `<div class="next-match">
       <div class="next-opp">${crest(opp.crest)}<div><div class="next-name">${home ? "vs" : "at"} ${esc(opp.name)}</div>
@@ -755,14 +756,13 @@ function renderClub(id) {
   }
 
   // Upcoming fixtures
-  const potOf = potIndex(allPots[current.meta.id]);
   const posOf = new Map(current.table.map((r, i) => [r.team.id, i + 1]));
   const upcoming = current.matches
     .filter((m) => m.status !== "FINISHED" && (m.homeTeam?.id === id || m.awayTeam?.id === id) && m.homeTeam?.id && m.awayTeam?.id)
     .sort((a, b) => a.utcDate.localeCompare(b.utcDate));
   const nextHtml = upcoming.length
-    ? fixtureLine(upcoming[0], id, potOf, posOf, true) +
-      (upcoming.length > 1 ? `<h3 class="sub-head">After that</h3>${upcoming.slice(1).map((m) => fixtureLine(m, id, potOf, posOf, false)).join("")}` : "")
+    ? fixtureLine(upcoming[0], id, posOf, true) +
+      (upcoming.length > 1 ? `<h3 class="sub-head">After that</h3>${upcoming.slice(1).map((m) => fixtureLine(m, id, posOf, false)).join("")}` : "")
     : `<p class="empty-note">${row ? "No upcoming matches scheduled." : "Not taking part this season."}</p>`;
 
   // Results this season (oldest first), coloured from the club's point of view
