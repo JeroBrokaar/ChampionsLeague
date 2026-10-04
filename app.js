@@ -685,7 +685,7 @@ function clubRecord(id, seasons) {
 function recordTableHtml(rec) {
   const line = (label, r, cls = "") => `<tr class="${cls}">
       <td class="season-cell">${label}</td><td>${r.p}</td><td>${r.w}</td><td>${r.d}</td><td>${r.l}</td>
-      <td>${r.gf}</td><td>${r.ga}</td><td>${signed(r.gf - r.ga)}</td>
+      <td class="goals goals-start">${r.gf}</td><td class="goals">${r.ga}</td><td class="goals">${signed(r.gf - r.ga)}</td>
     </tr>`;
   const group = (title) => `<tr class="group"><td colspan="8">${title}</td></tr>`;
   const ko = rec.ko.total.p
@@ -693,7 +693,7 @@ function recordTableHtml(rec) {
       (rec.ko.final.p ? line("Final", rec.ko.final) : "") + line("Total", rec.ko.total, "subtotal")
     : group("Knockout phase") + `<tr><td colspan="8" class="muted">No knockout matches yet.</td></tr>`;
   return `<table class="mini club-record">
-    <thead><tr><th></th><th>P</th><th>W</th><th>D</th><th>L</th><th>GF</th><th>GA</th><th>GD</th></tr></thead>
+    <thead><tr><th></th><th>P</th><th>W</th><th>D</th><th>L</th><th class="goals-start">GF</th><th>GA</th><th>GD</th></tr></thead>
     <tbody>
       ${group("League phase")}${line("Home", rec.league.home)}${line("Away", rec.league.away)}${line("Total", rec.league.total, "subtotal")}
       ${ko}

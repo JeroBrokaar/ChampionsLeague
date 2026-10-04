@@ -271,6 +271,8 @@ body[data-view="club"] .season-select { visibility: hidden; }
 .muted { color: var(--muted); font-size: 13px; }
 .club-record tr.group td { text-align: left; padding-top: 16px; font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; border-bottom: 1px solid var(--line); }
 .club-record tr.subtotal td { font-weight: 700; }
+.club-record .goals { color: var(--muted); }
+.club-record .goals-start { border-left: 1px solid var(--line); }
 .club-record tr.total td { font-weight: 800; border-top: 2px solid var(--muted); padding-top: 12px; }
 @media (max-width: 600px) {
   .club-stats { gap: 18px; }
