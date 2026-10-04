@@ -25,7 +25,7 @@ const label = (y) => `${y}/${String(y + 1).slice(-2)}`;
 
 async function fetchSeason(year) {
   const q = year ? `?season=${year}` : "";
-  const [standings, matches] = await Promise.all([get(`/standings${q}`), get(`/matches${q}`)]);
+  const [standings, matches, teams] = await Promise.all([get(`/standings${q}`), get(`/matches${q}`), get(`/teams${q}`)]);
   const total = standings.standings.find((s) => s.type === "TOTAL") ?? standings.standings[0];
   const updated = new Date().toISOString();
   const startYear = new Date(standings.season.startDate).getUTCFullYear();
@@ -72,6 +72,9 @@ async function fetchSeason(year) {
   await mkdir(dir, { recursive: true });
   await writeFile(`${dir}/standings.json`, JSON.stringify(standingsOut, null, 2));
   await writeFile(`${dir}/matches.json`, JSON.stringify(matchesOut, null, 2));
+  // Club countries, used for "against teams from <country>" talking points.
+  const teamsOut = { teams: (teams.teams || []).map((t) => ({ id: t.id, country: t.area?.name, code: t.area?.code })) };
+  await writeFile(`${dir}/teams.json`, JSON.stringify(teamsOut, null, 2));
   console.log(`${label(startYear)}: ${standingsOut.table.length} teams, ${matchesOut.matches.length} matches.`);
   return startYear;
 }

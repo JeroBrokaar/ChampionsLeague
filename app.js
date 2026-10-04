@@ -377,6 +377,7 @@ function fetchSeason(id) {
     seasonCache.set(base, Promise.all([
       loadJson(`${base}/standings.json`),
       loadJson(`${base}/matches.json`).then(removeShootouts).catch(() => ({ matches: [] })),
+      loadJson(`${base}/teams.json`).catch(() => ({ teams: [] })),
     ]));
   }
   return seasonCache.get(base);
@@ -668,13 +669,15 @@ const ZONE_TEXT = { z1: "Round of 16 places", z2: "Play-off places", z3: "Elimin
 async function loadClubData() {
   if (clubData) return clubData;
   const seasons = [];
+  const countryOf = new Map();
   for (const meta of seasonIndex) {
-    const [standings, matches] = await fetchSeason(meta.id);
+    const [standings, matches, teams] = await fetchSeason(meta.id);
     seasons.push({ meta, table: standings.table || [], matches: matches.matches || [] });
+    for (const t of teams.teams || []) if (t.country && !countryOf.has(t.id)) countryOf.set(t.id, t.country);
   }
   const clubs = new Map();
   for (const s of seasons) for (const r of s.table) if (!clubs.has(r.team.id)) clubs.set(r.team.id, r.team);
-  clubData = { seasons, clubs };
+  clubData = { seasons, clubs, countryOf };
   return clubData;
 }
 
@@ -924,8 +927,48 @@ function recordOf(list) {
 
 const streak = (list, test) => { let n = 0; for (const g of list) { if (!test(g)) break; n++; } return n; };
 
+const RESULT_WORD = { W: ["won", "wins"], D: ["drew", "draws"], L: ["lost", "defeats"] };
+
+// Current run of identical results, and when the team last had a longer one.
+function streakHistoryFact(name, hist) {
+  if (!hist.length) return null;
+  const type = hist[0].res;
+  const n = streak(hist, (g) => g.res === type);
+  if (n < (type === "D" ? 2 : 3)) return null;
+  // Older runs (newest first); find the most recent one of at least n + 1.
+  let i = n, found = null;
+  while (i < hist.length) {
+    if (hist[i].res !== type) { i++; continue; }
+    let j = i;
+    while (j < hist.length && hist[j].res === type) j++;
+    if (j - i >= n + 1) { found = hist[j - 1 - n]; break; } // the match that made it n + 1
+    i = j;
+  }
+  const [verb] = RESULT_WORD[type];
+  const now = `${name} have ${verb} their last ${n} matches.`;
+  return found
+    ? { score: n + 1.5, text: `${now} The last time they ${verb} ${n + 1} in a row was ${longDate(found.m.utcDate)}.` }
+    : { score: n + 2.5, text: `${now} They have never ${verb} ${n + 1} in a row in this format.` };
+}
+
+// Record against clubs from the opponent's country.
+function countryFact(name, hist, country, countryOf) {
+  if (!country) return null;
+  const games = hist.filter((g) => countryOf.get(g.opp.id) === country);
+  if (games.length < 3) return null;
+  const r = recordOf(games);
+  const from = `teams from ${country}`;
+  if (r.l === 0) return { score: games.length + 1, text: `${name} have never lost against ${from} in this format (${games.length} games).` };
+  if (r.w === 0) return { score: games.length + 1, text: `${name} have never beaten ${from} in this format (${games.length} games).` };
+  const lastLoss = games.find((g) => g.res === "L"), sinceLoss = games.indexOf(lastLoss);
+  if (sinceLoss >= 3) return { score: sinceLoss, text: `${name} haven't lost against ${from} since ${longDate(lastLoss.m.utcDate)} (${sinceLoss} games).` };
+  const lastWin = games.find((g) => g.res === "W"), sinceWin = games.indexOf(lastWin);
+  if (sinceWin >= 3) return { score: sinceWin, text: `${name} haven't beaten ${from} since ${longDate(lastWin.m.utcDate)} (${sinceWin} games).` };
+  return null;
+}
+
 // Interesting facts about one team going into the match, most notable first.
-function teamFacts(team, hist, venue) {
+function teamFacts(team, hist, venue, oppCountry, countryOf) {
   const facts = [];
   const name = tname(team);
   const where = venue === "home" ? "home" : "away";
@@ -959,6 +1002,11 @@ function teamFacts(team, hist, venue) {
       ? `${name} haven't beaten a top-8 team since ${longDate(lastWin.m.utcDate)} (${sinceWin} games).`
       : `${name} have never beaten a top-8 team in this format (${top8.length} games).`);
   }
+
+  const run = streakHistoryFact(name, hist);
+  if (run) facts.push(run);
+  const vsCountry = countryFact(name, hist, oppCountry, countryOf || new Map());
+  if (vsCountry) facts.push(vsCountry);
 
   const scored = streak(hist, (g) => g.gf > 0), blank = streak(hist, (g) => g.gf === 0), clean = streak(hist, (g) => g.ga === 0);
   if (scored >= 6) add(scored / 2, `${name} scored in each of their last ${scored} matches.`);
@@ -1008,7 +1056,7 @@ function compareRows(a, b) {
 
 async function renderMatch(id) {
   const box = $("#match-detail");
-  const { seasons } = await loadClubData();
+  const { seasons, countryOf } = await loadClubData();
   let season = null, m = null;
   for (const s of seasons) { m = s.matches.find((x) => x.id === id); if (m) { season = s; break; } }
   if (!m || !m.homeTeam?.id || !m.awayTeam?.id) {
@@ -1046,7 +1094,8 @@ async function renderMatch(id) {
 
   const hHome = hHist.filter((g) => g.home && !g.final), aAway = aHist.filter((g) => !g.home && !g.final);
   const thisSeason = (g) => g.m.utcDate >= (season.matches.map((x) => x.utcDate).sort()[0] || "");
-  const facts = [...teamFacts(H, hHist, "home").map((f) => ({ ...f, team: H })), ...teamFacts(A, aHist, "away").map((f) => ({ ...f, team: A }))]
+  const facts = [...teamFacts(H, hHist, "home", countryOf.get(A.id), countryOf).map((f) => ({ ...f, team: H })),
+    ...teamFacts(A, aHist, "away", countryOf.get(H.id), countryOf).map((f) => ({ ...f, team: A }))]
     .sort((a, b) => b.score - a.score);
 
   box.innerHTML = `
