@@ -43,6 +43,15 @@ since football-data and UEFA ids differ. Matches clicked there open in their own
 (one opponent per pot, shown with an H/A marker). All competitions: 1–8 Round of 16, 9–24 knockout
 play-offs (9–16 seeded), 25–36 out. Switch via `?comp=el` / `?comp=ecl` (full page reload).
 
+## Match odds model (simulation + chance bars)
+
+`fitRatingModel` in app.js: x = home advantage + pot effect (per competition) × pot-score difference + country
+rating difference → ordered-logit home/draw/away. Trained in the browser on all finished past league phases of
+all three competitions (countries shared), country ratings pulled toward 0 (`COUNTRY_PULL` = 10).
+Chosen by backtest (`scripts/backtest_odds.py`: train 2024/25, test 2025/26): better than pot-vs-pot rates in all
+three competitions. A club rating (past European results) didn't help yet with one season of history — re-test
+when there are more seasons.
+
 ## Feature switches
 
 `FEATURES` at the top of app.js. The **Simulation tab** and the **match chance bars** are on; the table's

@@ -195,15 +195,12 @@ function seasonSimulation(seasonId) {
       const [standings, matches] = await fetchSeason(seasonId);
       const league = (matches.matches || []).filter((m) => m.stage === "LEAGUE_STAGE");
       if (!league.length || league.every((m) => m.status === "FINISHED")) return { finished: true };
-      const past = [];
-      for (const meta of seasonIndex) {
-        if (meta.id === seasonId || !allPots[meta.id]) continue;
-        const [, m] = await fetchSeason(meta.id);
-        const pastLeague = (m.matches || []).filter((x) => x.stage === "LEAGUE_STAGE");
-        if (pastLeague.length && pastLeague.every((x) => x.status === "FINISHED")) past.push({ matches: m.matches, pots: allPots[meta.id] });
-      }
-      if (!past.length) return null;
-      const sim = simulateSeason(standings.table, league, potIndex(pots), buildOddsModel(past), { seed: simSeed(standings.updated) });
+      const rows = await ratingTrainingRows(seasonId);
+      if (!rows.length) return null;
+      const [, , teams] = await fetchSeason(seasonId);
+      const countryOf = new Map((teams.teams || []).map((x) => [x.id, countryName(x.country)]));
+      const potOf = potIndex(pots);
+      const sim = simulateSeason(standings.table, league, potOf, buildOddsModel(fitRatingModel(rows), potOf, countryOf), { seed: simSeed(standings.updated) });
       return { sim, ...mostLikelyTable(standings.table, sim.games) };
     })().catch((err) => { console.error(err); return null; }));
   }
@@ -495,33 +492,90 @@ function showError(err) {
 /* ---------- Simulation ---------- */
 
 const SIM_RUNS = 10000;
-const ODDS_PRIOR = 3;   // pulls thin pot-vs-pot samples toward the overall home/draw/away split
 const FORM_SHRINK = 3;  // extra "games" of zero form, so one result doesn't swing a team too far
 // Log-odds shift per point-per-game of form difference. Backtests on 2024/25 and 2025/26 were
 // most accurate at 0 (points already in the table carry the form), so it is off for now.
 const FORM_WEIGHT = 0;
 
-// Home/draw/away rates for every (home pot, away pot) pair in past league phases.
-function buildOddsModel(pastSeasons) {
-  const counts = {}, all = { h: 0, d: 0, a: 0 };
-  for (const { matches, pots } of pastSeasons) {
-    const potOf = potIndex(pots);
-    for (const m of matches) {
-      if (m.stage !== "LEAGUE_STAGE" || m.status !== "FINISHED") continue;
-      const hp = potOf[m.homeTeam.id], ap = potOf[m.awayTeam.id];
-      if (!hp || !ap) continue;
-      const { home: h, away: a } = m.score.fullTime;
-      const k = h > a ? "h" : h < a ? "a" : "d";
-      const c = (counts[`${hp}${ap}`] ??= { h: 0, d: 0, a: 0 });
-      c[k]++; all[k]++;
+// Match odds model (backtested on 2025/26 with 2024/25 as history; better than pot-vs-pot rates in all
+// three competitions). Each match gets x = home advantage + pot effect x pot difference + country rating
+// difference; home win / draw / away win follow an ordered-logit split of x. Country ratings are learned from
+// the past seasons of all three competitions together and pulled toward 0 (COUNTRY_PULL) when data is thin.
+const COUNTRY_PULL = 10;
+const potScore = (pot, n) => ((n + 1) / 2 - pot) / ((n - 1) / 2); // +1 = pot 1 ... -1 = last pot
+const countryName = (c) => (c === "Monaco" ? "France" : c || "?"); // AS Monaco plays in the French league
+
+function outcomeProbs(x, c) {
+  const h = sigmoid(x - c), a = sigmoid(-x - c);
+  return { h, d: Math.max(1 - h - a, 1e-6), a };
+}
+
+// rows: { comp, dp (pot score difference), hc, ac (countries), out (0 home win, 1 draw, 2 away win) }
+function fitRatingModel(rows) {
+  let h = 0.3, c = 0.5;
+  const bpot = {}, ctry = {}, n = rows.length || 1, lr = 0.05;
+  for (let it = 0; it < 400; it++) {
+    let gh = 0, gc = 0;
+    const gb = {}, gn = {};
+    for (const r of rows) {
+      const x = h + (bpot[r.comp] || 0) * r.dp + (ctry[r.hc] || 0) - (ctry[r.ac] || 0);
+      const sh = sigmoid(x - c), sa = sigmoid(-x - c);
+      let dx, dc;
+      if (r.out === 0) { dx = 1 - sh; dc = -(1 - sh); }
+      else if (r.out === 2) { dx = -(1 - sa); dc = -(1 - sa); }
+      else {
+        const pd = Math.max(1 - sh - sa, 1e-9);
+        dx = (-sh * (1 - sh) + sa * (1 - sa)) / pd;
+        dc = (sh * (1 - sh) + sa * (1 - sa)) / pd;
+      }
+      gh += dx; gc += dc;
+      gb[r.comp] = (gb[r.comp] || 0) + dx * r.dp;
+      gn[r.hc] = (gn[r.hc] || 0) + dx;
+      gn[r.ac] = (gn[r.ac] || 0) - dx;
+    }
+    h += (lr * gh / n) * 10;
+    c = Math.max(0.05, c + (lr * gc / n) * 10);
+    for (const k in gb) bpot[k] = (bpot[k] || 0) + (lr * gb[k] / n) * 10;
+    for (const k of new Set([...Object.keys(gn), ...Object.keys(ctry)])) {
+      ctry[k] = (ctry[k] || 0) + (lr * ((gn[k] || 0) - COUNTRY_PULL * (ctry[k] || 0))) / 30;
     }
   }
-  const n = all.h + all.d + all.a || 1;
-  const overall = { h: all.h / n, d: all.d / n, a: all.a / n };
-  return (hp, ap) => {
-    const c = counts[`${hp}${ap}`] || { h: 0, d: 0, a: 0 };
-    const t = c.h + c.d + c.a + ODDS_PRIOR;
-    return { h: (c.h + ODDS_PRIOR * overall.h) / t, d: (c.d + ODDS_PRIOR * overall.d) / t, a: (c.a + ODDS_PRIOR * overall.a) / t };
+  return { h, c, bpot, ctry };
+}
+
+// Training rows from every finished past league phase of all three competitions (except `skip`).
+async function ratingTrainingRows(skip) {
+  const rows = [];
+  for (const comp of Object.values(COMPS)) {
+    const index = await loadJson(`${comp.base}/seasons.json`).catch(() => null);
+    const pots = (await loadJson(comp.pots).catch(() => ({ seasons: {} }))).seasons || {};
+    for (const meta of index?.seasons || []) {
+      if ((comp === COMP && meta.id === skip) || !pots[meta.id]) continue;
+      const [, m, t] = await fetchSeason(meta.id, comp).catch(() => [null, { matches: [] }, { teams: [] }]);
+      const league = (m.matches || []).filter((x) => x.stage === "LEAGUE_STAGE");
+      if (!league.length || league.some((x) => x.status !== "FINISHED")) continue;
+      const potOf = potIndex(pots[meta.id]);
+      const countryOf = new Map((t.teams || []).map((x) => [x.id, countryName(x.country)]));
+      for (const x of league) {
+        const hp = potOf[x.homeTeam.id], ap = potOf[x.awayTeam.id];
+        if (!hp || !ap) continue;
+        const { home: hg, away: ag } = x.score.fullTime;
+        rows.push({ comp: comp.key, dp: potScore(Number(hp), comp.potCount) - potScore(Number(ap), comp.potCount),
+          hc: countryOf.get(x.homeTeam.id) || "?", ac: countryOf.get(x.awayTeam.id) || "?", out: hg > ag ? 0 : hg < ag ? 2 : 1 });
+      }
+    }
+  }
+  return rows;
+}
+
+// Odds function for this competition's matches: m -> { h, d, a }.
+function buildOddsModel(model, potOf, countryOf) {
+  return (m) => {
+    const hp = Number(potOf[m.homeTeam.id]), ap = Number(potOf[m.awayTeam.id]);
+    const dp = hp && ap ? potScore(hp, COMP.potCount) - potScore(ap, COMP.potCount) : 0;
+    const x = model.h + (model.bpot[COMP.key] || 0) * dp +
+      (model.ctry[countryOf.get(m.homeTeam.id) || "?"] || 0) - (model.ctry[countryOf.get(m.awayTeam.id) || "?"] || 0);
+    return outcomeProbs(x, model.c);
   };
 }
 
@@ -529,9 +583,8 @@ function buildOddsModel(pastSeasons) {
 function teamForm(table, finishedLeague, potOf, odds) {
   const exp = new Map(), act = new Map(), games = new Map();
   for (const m of finishedLeague) {
-    const hp = potOf[m.homeTeam.id], ap = potOf[m.awayTeam.id];
-    if (!hp || !ap) continue;
-    const o = odds(hp, ap);
+    if (!potOf[m.homeTeam.id] || !potOf[m.awayTeam.id]) continue;
+    const o = odds(m);
     const { home: h, away: a } = m.score.fullTime;
     const add = (map, id, v) => map.set(id, (map.get(id) || 0) + v);
     add(exp, m.homeTeam.id, 3 * o.h + o.d); add(exp, m.awayTeam.id, 3 * o.a + o.d);
@@ -544,9 +597,9 @@ function teamForm(table, finishedLeague, potOf, odds) {
   }));
 }
 
-// Match odds: pot-vs-pot rates, with the win/loss split tilted by the form difference.
+// Match odds from the model, with the win/loss split tilted by the form difference (weight 0 for now).
 function matchOdds(m, potOf, odds, form, formWeight = FORM_WEIGHT) {
-  const o = odds(potOf[m.homeTeam.id], potOf[m.awayTeam.id]);
+  const o = odds(m);
   const shift = formWeight * ((form.get(m.homeTeam.id) || 0) - (form.get(m.awayTeam.id) || 0));
   const r = sigmoid(logit(o.h / (o.h + o.a)) + shift);
   return { h: (1 - o.d) * r, d: o.d, a: (1 - o.d) * (1 - r) };
