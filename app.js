@@ -33,7 +33,7 @@ function crest(url) {
 const FEATURES = {
   simulationTab: true, // the Simulation tab
   tablePredictions: false, // Top 8 / Top 24 columns in the table
-  matchOddsBars: false, // home/draw/away bars under upcoming matches
+  matchOddsBars: true, // home/draw/away bars under upcoming matches
 };
 
 /* ---------- Competition (switch at the top: ?comp=el / ?comp=ecl) ---------- */
