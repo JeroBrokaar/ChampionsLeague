@@ -497,11 +497,15 @@ const FORM_SHRINK = 3;  // extra "games" of zero form, so one result doesn't swi
 // most accurate at 0 (points already in the table carry the form), so it is off for now.
 const FORM_WEIGHT = 0;
 
-// Match odds model (backtested on 2025/26 with 2024/25 as history; better than pot-vs-pot rates in all
-// three competitions). Each match gets x = home advantage + pot effect x pot difference + country rating
-// difference; home win / draw / away win follow an ordered-logit split of x. Country ratings are learned from
-// the past seasons of all three competitions together and pulled toward 0 (COUNTRY_PULL) when data is thin.
+// Match odds model (backtested on 2025/26 with 2024/25 as history). Each match gets
+//   x = home advantage + pot effect x pot difference + capped(country + club rating difference)
+// and home win / draw / away win follow an ordered-logit split of x. Ratings are learned from all finished
+// past matches (league phase and knockouts, final on neutral ground) of all three competitions and pulled
+// toward 0 when data is thin. Country + club together may move a team by at most RATING_CAP pot steps, so a
+// Pot 2 club can't be rated above the Pot 1 average (user's request: countries came out far too strong).
 const COUNTRY_PULL = 10;
+const CLUB_PULL = 5;
+const RATING_CAP = 0.5; // in pot steps
 const potScore = (pot, n) => ((n + 1) / 2 - pot) / ((n - 1) / 2); // +1 = pot 1 ... -1 = last pot
 const countryName = (c) => (c === "Monaco" ? "France" : c || "?"); // AS Monaco plays in the French league
 
@@ -510,7 +514,7 @@ function outcomeProbs(x, c) {
   return { h, d: Math.max(1 - h - a, 1e-6), a };
 }
 
-// rows: { comp, dp (pot score difference), hc, ac (countries), out (0 home win, 1 draw, 2 away win) }
+// rows: { comp, dp (pot score difference), hc, ac (countries), hk, ak (clubs), neutral, out (0 home, 1 draw, 2 away) }
 function fitRatingModel(rows) {
   let h = 0.3, c = 0.5;
   const bpot = {}, ctry = {}, n = rows.length || 1, lr = 0.05;
@@ -518,7 +522,7 @@ function fitRatingModel(rows) {
     let gh = 0, gc = 0;
     const gb = {}, gn = {};
     for (const r of rows) {
-      const x = h + (bpot[r.comp] || 0) * r.dp + (ctry[r.hc] || 0) - (ctry[r.ac] || 0);
+      const x = (r.neutral ? 0 : h) + (bpot[r.comp] || 0) * r.dp + (ctry[r.hc] || 0) - (ctry[r.ac] || 0) + (ctry[r.hk] || 0) - (ctry[r.ak] || 0);
       const sh = sigmoid(x - c), sa = sigmoid(-x - c);
       let dx, dc;
       if (r.out === 0) { dx = 1 - sh; dc = -(1 - sh); }
@@ -528,16 +532,17 @@ function fitRatingModel(rows) {
         dx = (-sh * (1 - sh) + sa * (1 - sa)) / pd;
         dc = (sh * (1 - sh) + sa * (1 - sa)) / pd;
       }
-      gh += dx; gc += dc;
+      if (!r.neutral) gh += dx;
+      gc += dc;
       gb[r.comp] = (gb[r.comp] || 0) + dx * r.dp;
-      gn[r.hc] = (gn[r.hc] || 0) + dx;
-      gn[r.ac] = (gn[r.ac] || 0) - dx;
+      for (const [k, v] of [[r.hc, dx], [r.ac, -dx], [r.hk, dx], [r.ak, -dx]]) gn[k] = (gn[k] || 0) + v;
     }
     h += (lr * gh / n) * 10;
     c = Math.max(0.05, c + (lr * gc / n) * 10);
     for (const k in gb) bpot[k] = (bpot[k] || 0) + (lr * gb[k] / n) * 10;
     for (const k of new Set([...Object.keys(gn), ...Object.keys(ctry)])) {
-      ctry[k] = (ctry[k] || 0) + (lr * ((gn[k] || 0) - COUNTRY_PULL * (ctry[k] || 0))) / 30;
+      const pull = k.startsWith("club:") ? CLUB_PULL : COUNTRY_PULL; // country and club ratings share one table
+      ctry[k] = (ctry[k] || 0) + (lr * ((gn[k] || 0) - pull * (ctry[k] || 0))) / 30;
     }
   }
   return { h, c, bpot, ctry };
@@ -556,12 +561,14 @@ async function ratingTrainingRows(skip) {
       if (!league.length || league.some((x) => x.status !== "FINISHED")) continue;
       const potOf = potIndex(pots[meta.id]);
       const countryOf = new Map((t.teams || []).map((x) => [x.id, countryName(x.country)]));
-      for (const x of league) {
+      for (const x of (m.matches || []).filter((g) => g.status === "FINISHED")) {
         const hp = potOf[x.homeTeam.id], ap = potOf[x.awayTeam.id];
         if (!hp || !ap) continue;
         const { home: hg, away: ag } = x.score.fullTime;
         rows.push({ comp: comp.key, dp: potScore(Number(hp), comp.potCount) - potScore(Number(ap), comp.potCount),
-          hc: countryOf.get(x.homeTeam.id) || "?", ac: countryOf.get(x.awayTeam.id) || "?", out: hg > ag ? 0 : hg < ag ? 2 : 1 });
+          hc: countryOf.get(x.homeTeam.id) || "?", ac: countryOf.get(x.awayTeam.id) || "?",
+          hk: `club:${clubKey(x.homeTeam.name)}`, ak: `club:${clubKey(x.awayTeam.name)}`,
+          neutral: x.stage === "FINAL", out: hg > ag ? 0 : hg < ag ? 2 : 1 });
       }
     }
   }
@@ -573,9 +580,11 @@ function buildOddsModel(model, potOf, countryOf) {
   return (m) => {
     const hp = Number(potOf[m.homeTeam.id]), ap = Number(potOf[m.awayTeam.id]);
     const dp = hp && ap ? potScore(hp, COMP.potCount) - potScore(ap, COMP.potCount) : 0;
-    const x = model.h + (model.bpot[COMP.key] || 0) * dp +
-      (model.ctry[countryOf.get(m.homeTeam.id) || "?"] || 0) - (model.ctry[countryOf.get(m.awayTeam.id) || "?"] || 0);
-    return outcomeProbs(x, model.c);
+    const bp = model.bpot[COMP.key] || 0;
+    const rating = (t) => (model.ctry[countryOf.get(t.id) || "?"] || 0) + (model.ctry[`club:${clubKey(t.name)}`] || 0);
+    const cap = RATING_CAP * bp * (2 / (COMP.potCount - 1)); // half the gap between two neighbouring pots
+    const rd = Math.max(-cap, Math.min(cap, rating(m.homeTeam) - rating(m.awayTeam)));
+    return outcomeProbs(model.h + bp * dp + rd, model.c);
   };
 }
 
