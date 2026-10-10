@@ -680,7 +680,8 @@ function distStrip(dist) {
 }
 
 function simChancesHtml(sim) {
-  const rows = sim.teams.slice().sort((a, b) => a.avgPos - b.avgPos);
+  // Highest expected points first (average position breaks ties)
+  const rows = sim.teams.slice().sort((a, b) => b.expPts - a.expPts || a.avgPos - b.avgPos);
   const pctCell = (p) => `<td class="sim-pct">${p >= 0.995 ? "100%" : p > 0 && p < 0.005 ? "<1%" : pctText(p)}</td>`;
   return `<div class="table-scroll"><table class="mini sim-table">
     <thead><tr><th>#</th><th class="team">Team</th><th>Pts now</th><th>Exp. pts</th><th>Top 8</th><th>Top 24</th><th>Out</th><th class="dist-head">Final position · 1 → 36</th></tr></thead>
