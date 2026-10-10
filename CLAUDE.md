@@ -45,8 +45,8 @@ play-offs (9–16 seeded), 25–36 out. Switch via `?comp=el` / `?comp=ecl` (ful
 
 ## Feature switches
 
-`FEATURES` at the top of app.js. The **simulation is paused** (user's request): Simulation tab, table
-Top 8/Top 24 columns and match chance bars are all `false`. Code is intact; re-enable per part on request.
+`FEATURES` at the top of app.js. The **Simulation tab is on**; the table's Top 8/Top 24 columns and the match
+chance bars are still `false` (paused at the user's request). Code is intact; re-enable per part on request.
 
 ## User preferences (keep these)
 

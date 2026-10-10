@@ -31,7 +31,7 @@ function crest(url) {
 
 // The simulation is paused for now. Each part can be switched back on separately.
 const FEATURES = {
-  simulationTab: false, // the Simulation tab
+  simulationTab: true, // the Simulation tab
   tablePredictions: false, // Top 8 / Top 24 columns in the table
   matchOddsBars: false, // home/draw/away bars under upcoming matches
 };
