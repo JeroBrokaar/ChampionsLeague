@@ -17,8 +17,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Fetch 2023/24, 2024/25 and 2025/26
-        run: python3 scripts/fetch_domestic.py elo-data 2023 2024 2025
+      - name: Fetch missing seasons (2023/24 - 2026/27)
+        run: |
+          sleep 75  # let the regular update job finish its requests first (shared 10/min limit)
+          python3 scripts/fetch_domestic.py elo-data 2023 2024 2025 2026
         env:
           FOOTBALL_DATA_TOKEN: ${{ secrets.FOOTBALL_DATA_TOKEN }}
       - name: Commit the files

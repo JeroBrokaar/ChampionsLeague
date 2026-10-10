@@ -12,6 +12,7 @@ LEAGUES = {  # football-data code -> country (as used in the site's data)
 }
 TOKEN = os.environ.get("FOOTBALL_DATA_TOKEN")
 PAUSE = 6.5  # seconds between requests (free plan: 10 per minute)
+CURRENT = 2026  # the season in progress is always fetched again; finished seasons only once
 
 
 def get(path):
@@ -47,6 +48,9 @@ def main():
             if not first:
                 time.sleep(PAUSE)
             first = False
+            if season < CURRENT and os.path.exists(os.path.join(out_dir, f"{code}-{season}.json")):
+                first = True  # finished season already stored - no request needed
+                continue
             try:
                 fetch(code, season, out_dir)
             except Exception as err:  # e.g. a season the free plan doesn't cover
