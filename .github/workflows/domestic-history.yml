@@ -1,0 +1,30 @@
+name: Fetch domestic league history (one-off)
+
+# Fetches finished seasons of 8 domestic leagues once and commits them to elo-data/,
+# so the regular update job only needs the current season.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/domestic-history.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch 2023/24, 2024/25 and 2025/26
+        run: python3 scripts/fetch_domestic.py elo-data 2023 2024 2025
+        env:
+          FOOTBALL_DATA_TOKEN: ${{ secrets.FOOTBALL_DATA_TOKEN }}
+      - name: Commit the files
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git add elo-data
+          git diff --cached --quiet || git commit -m "Domestic league history for Elo ratings"
+          git push
